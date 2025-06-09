@@ -138,8 +138,17 @@ def fetch_acs_data_for_blocks(state_fips: str = CALIFORNIA_FIPS) -> pd.DataFrame
             df[col] = pd.to_numeric(df[col], errors='coerce')
         
         # Calculate rates
+        # B17001_002E is count below poverty, B17001_001E is total population for poverty status
         df['poverty_rate'] = df['B17001_002E'] / df['B17001_001E']
+        
+        # B22007 is for households, not SNAP directly. Let's use a more appropriate calculation
+        # For SNAP, we need different variables. B22001 series has SNAP data
+        # But B22007_002E / B22007_001E gives us households receiving food stamps
         df['snap_rate'] = df['B22007_002E'] / df['B22007_001E']
+        
+        # Replace infinity values with 0 (when denominator is 0)
+        df['poverty_rate'] = df['poverty_rate'].replace([float('inf'), -float('inf')], 0)
+        df['snap_rate'] = df['snap_rate'].replace([float('inf'), -float('inf')], 0)
         
         # Handle division by zero
         df['poverty_rate'] = df['poverty_rate'].fillna(0)
@@ -270,7 +279,7 @@ def store_in_mongodb(features: List[Dict[str, Any]], db_name: str, collection_na
         collection_name: Collection name
     """
     # Connect to MongoDB
-    mongodb_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+    mongodb_uri = os.getenv('MONGO_DB_URI', 'mongodb://localhost:27017/')
     client = MongoClient(mongodb_uri)
     
     try:
