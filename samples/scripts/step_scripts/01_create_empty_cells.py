@@ -63,7 +63,8 @@ def create_grid_bounds(
 
 def create_empty_cells(
     lats: np.ndarray, 
-    lons: np.ndarray
+    lons: np.ndarray,
+    cell_size: float
 ) -> List[Dict]:
     """
     Create empty cell documents with only centroid coordinates.
@@ -86,6 +87,8 @@ def create_empty_cells(
                 cell = {
                     'centroidLat': float(lat),
                     'centroidLon': float(lon),
+                    'cellSizeSquareMeters': 150000,  # 150,000 m²
+                    'cellSizeDegrees': cell_size,
                     'createdAt': datetime.utcnow(),
                     'updatedAt': datetime.utcnow(),
                     # Placeholder values - will be populated by subsequent scripts
@@ -166,30 +169,61 @@ def main():
     """Main execution function."""
     parser = argparse.ArgumentParser(description='Create empty cell grid for food insecurity analysis')
     
-    # Grid bounds arguments
-    parser.add_argument('--min-lat', type=float, help='Minimum latitude (default from env or 40.4774)')
-    parser.add_argument('--max-lat', type=float, help='Maximum latitude (default from env or 40.9176)')
-    parser.add_argument('--min-lon', type=float, help='Minimum longitude (default from env or -74.2591)')
-    parser.add_argument('--max-lon', type=float, help='Maximum longitude (default from env or -73.7004)')
-    parser.add_argument('--cell-size', type=float, help='Cell size in degrees (default from env or 0.01)')
+    # Center and radius arguments (alternative to bounds)
+    parser.add_argument('--center-lat', type=float, help='Center latitude (default: downtown LA 34.0522)')
+    parser.add_argument('--center-lon', type=float, help='Center longitude (default: downtown LA -118.2437)')
+    parser.add_argument('--radius-miles', type=float, help='Radius in miles from center (default: 2.0)')
+    
+    # Grid bounds arguments (override center/radius if provided)
+    parser.add_argument('--min-lat', type=float, help='Minimum latitude (overrides center/radius)')
+    parser.add_argument('--max-lat', type=float, help='Maximum latitude (overrides center/radius)')
+    parser.add_argument('--min-lon', type=float, help='Minimum longitude (overrides center/radius)')
+    parser.add_argument('--max-lon', type=float, help='Maximum longitude (overrides center/radius)')
+    parser.add_argument('--cell-size', type=float, help='Cell size in degrees (default: 0.00349 for ~150k m²)')
     parser.add_argument('--db-name', type=str, help='Database name (default from env TEST_DB_NAME)')
     parser.add_argument('--collection', type=str, default='cells', help='Collection name (default: cells)')
     
     args = parser.parse_args()
     
     # Get configuration from environment or arguments
-    # Default bounds are for NYC area
-    min_lat = args.min_lat or float(os.getenv('GRID_MIN_LAT', '40.4774'))
-    max_lat = args.max_lat or float(os.getenv('GRID_MAX_LAT', '40.9176'))
-    min_lon = args.min_lon or float(os.getenv('GRID_MIN_LON', '-74.2591'))
-    max_lon = args.max_lon or float(os.getenv('GRID_MAX_LON', '-73.7004'))
-    cell_size = args.cell_size or float(os.getenv('GRID_CELL_SIZE', '0.01'))
+    # Calculate cell size: 150,000 m² = 0.15 km²
+    # At LA's latitude (~34°), 1 degree ≈ 111 km, so we need ~0.00387 degrees for a square cell
+    # sqrt(0.15) ≈ 0.387 km per side, 0.387/111 ≈ 0.00349 degrees
+    default_cell_size = 0.00349
+    
+    # Default center is downtown LA (City Hall)
+    default_center_lat = 34.0522
+    default_center_lon = -118.2437
+    default_radius_miles = 2.0
+    
+    # Convert radius to degrees (approximate)
+    # 1 mile ≈ 1.609 km, at LA latitude: 1 degree ≈ 111 km
+    radius_degrees = (default_radius_miles * 1.609) / 111.0
+    
+    # Calculate bounds from center and radius if not provided
+    center_lat = args.center_lat if args.center_lat is not None else float(os.getenv('GRID_CENTER_LAT', str(default_center_lat)))
+    center_lon = args.center_lon if args.center_lon is not None else float(os.getenv('GRID_CENTER_LON', str(default_center_lon)))
+    radius_miles = args.radius_miles if args.radius_miles is not None else float(os.getenv('GRID_RADIUS_MILES', str(default_radius_miles)))
+    
+    # Convert radius to degrees
+    radius_degrees = (radius_miles * 1.609) / 111.0
+    
+    # Calculate bounds if not explicitly provided
+    min_lat = args.min_lat or float(os.getenv('GRID_MIN_LAT', str(center_lat - radius_degrees)))
+    max_lat = args.max_lat or float(os.getenv('GRID_MAX_LAT', str(center_lat + radius_degrees)))
+    min_lon = args.min_lon or float(os.getenv('GRID_MIN_LON', str(center_lon - radius_degrees)))
+    max_lon = args.max_lon or float(os.getenv('GRID_MAX_LON', str(center_lon + radius_degrees)))
+    
+    cell_size = args.cell_size or float(os.getenv('GRID_CELL_SIZE', str(default_cell_size)))
     db_name = args.db_name or os.getenv('TEST_DB_NAME', 'food_insecurity_test')
     
     print("Grid Configuration:")
-    print(f"  Latitude: {min_lat} to {max_lat}")
-    print(f"  Longitude: {min_lon} to {max_lon}")
-    print(f"  Cell size: {cell_size} degrees")
+    print(f"  Center: {center_lat}, {center_lon} (downtown LA)" if center_lat == default_center_lat else f"  Center: {center_lat}, {center_lon}")
+    print(f"  Radius: {radius_miles} miles")
+    print(f"  Latitude: {min_lat:.4f} to {max_lat:.4f}")
+    print(f"  Longitude: {min_lon:.4f} to {max_lon:.4f}")
+    print(f"  Cell size: {cell_size:.5f} degrees (~150,000 m² per cell)")
+    print(f"  Approximate cell dimensions: {cell_size * 111:.2f} km × {cell_size * 111:.2f} km")
     print(f"  Database: {db_name}")
     print(f"  Collection: {args.collection}")
     print()
@@ -202,7 +236,7 @@ def main():
         lats, lons = create_grid_bounds(min_lat, max_lat, min_lon, max_lon, cell_size)
         
         # Create empty cells
-        cells = create_empty_cells(lats, lons)
+        cells = create_empty_cells(lats, lons, cell_size)
         
         # Save to MongoDB
         save_cells_to_mongodb(cells, client, db_name, args.collection)
