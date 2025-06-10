@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Orchestrator script to run all food insecurity analysis steps sequentially.
+Works with domain collections created by step 1.
 """
 
 import os
@@ -9,6 +10,8 @@ import subprocess
 from datetime import datetime
 from typing import List, Tuple
 from dotenv import load_dotenv
+import argparse
+import json
 
 # Load environment variables
 load_dotenv()
@@ -16,45 +19,52 @@ load_dotenv()
 # Define the steps in order
 STEPS = [
     {
-        'name': 'Create Empty Cells',
-        'script': '01_create_empty_cells.py',
-        'description': 'Create grid of empty cells with centroid coordinates'
+        'name': 'Create Domain',
+        'script': '01_create_domain.py',
+        'description': 'Create domain collection from census blocks within radius',
+        'supports_collection': False  # This step creates the collection
+    },
+    {
+        'name': 'Calculate Food Insecurity Scores',
+        'script': '02_calculate_food_insecurity.py',
+        'description': 'Calculate initial food insecurity scores based on poverty and SNAP rates',
+        'supports_collection': True
     },
     # Future steps will be added here:
     # {
-    #     'name': 'Populate Cell Population',
-    #     'script': '02_populate_population.py',
-    #     'description': 'Add population data to cells from census data'
-    # },
-    # {
-    #     'name': 'Calculate Poverty/SNAP Rates',
-    #     'script': '03_calculate_poverty_snap.py',
-    #     'description': 'Calculate poverty and SNAP eligibility rates per cell'
-    # },
-    # {
     #     'name': 'Find Nearest Supermarkets',
-    #     'script': '04_find_supermarkets.py',
-    #     'description': 'Calculate distance to nearest supermarket for each cell'
+    #     'script': '03_find_supermarkets.py',
+    #     'description': 'Calculate distance to nearest supermarket for each block',
+    #     'supports_collection': True
     # },
     # {
     #     'name': 'Calculate Vehicle Access',
-    #     'script': '05_vehicle_access.py',
-    #     'description': 'Determine vehicle access rates per cell'
+    #     'script': '04_vehicle_access.py',
+    #     'description': 'Determine vehicle access rates per block',
+    #     'supports_collection': True
     # },
     # {
-    #     'name': 'Calculate Food Insecurity Scores',
-    #     'script': '06_calculate_scores.py',
-    #     'description': 'Calculate final food insecurity scores and need metrics'
+    #     'name': 'Update Food Insecurity Scores',
+    #     'script': '05_update_scores.py',
+    #     'description': 'Update scores with all factors and calculate need metrics',
+    #     'supports_collection': True
+    # },
+    # {
+    #     'name': 'Generate Analysis Report',
+    #     'script': '06_generate_report.py',
+    #     'description': 'Generate summary statistics and visualizations',
+    #     'supports_collection': True
     # }
 ]
 
-def run_step(step_name: str, script_path: str) -> Tuple[bool, str]:
+def run_step(step_name: str, script_path: str, extra_args: List[str] = None) -> Tuple[bool, str]:
     """
     Run a single step script.
     
     Args:
         step_name: Name of the step
         script_path: Path to the script
+        extra_args: Additional arguments to pass to the script
         
     Returns:
         Tuple of (success, output)
@@ -63,12 +73,19 @@ def run_step(step_name: str, script_path: str) -> Tuple[bool, str]:
     print(f"Running: {step_name}")
     print(f"Script: {script_path}")
     print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    if extra_args:
+        print(f"Arguments: {' '.join(extra_args)}")
     print(f"{'='*60}\n")
     
     try:
+        # Build command
+        cmd = [sys.executable, script_path]
+        if extra_args:
+            cmd.extend(extra_args)
+        
         # Run the script
         result = subprocess.run(
-            [sys.executable, script_path],
+            cmd,
             capture_output=True,
             text=True,
             check=True
@@ -82,7 +99,8 @@ def run_step(step_name: str, script_path: str) -> Tuple[bool, str]:
             print("Warnings/Errors:", file=sys.stderr)
             print(result.stderr, file=sys.stderr)
         
-        return True, result.stdout
+        # Return both stdout and stderr for parsing
+        return True, result.stdout + '\n' + result.stderr
         
     except subprocess.CalledProcessError as e:
         print(f"\n✗ Step failed with exit code {e.returncode}")
@@ -97,8 +115,41 @@ def run_step(step_name: str, script_path: str) -> Tuple[bool, str]:
         print(f"\n✗ Unexpected error: {e}")
         return False, str(e)
 
+def extract_collection_name(output: str) -> str:
+    """Extract collection name from step 1 output."""
+    # Look in both stdout and stderr since logging goes to stderr
+    for line in output.split('\n'):
+        if 'Collection name: ' in line:
+            # Extract the collection name after the colon
+            parts = line.split('Collection name: ')
+            if len(parts) > 1:
+                return parts[1].strip()
+    return None
+
 def main():
     """Main orchestrator function."""
+    parser = argparse.ArgumentParser(description='Food Insecurity Analysis Orchestrator')
+    
+    # Arguments for domain creation (step 1)
+    parser.add_argument('--name', type=str, default='downtown_la',
+                       help='Name for the domain (will be prefixed with d_)')
+    parser.add_argument('--lat', type=float, default=34.0522,
+                       help='Latitude of center point')
+    parser.add_argument('--lon', type=float, default=-118.2437,
+                       help='Longitude of center point')
+    parser.add_argument('--radius', type=float, default=2.0,
+                       help='Radius in miles')
+    
+    # Optional: specify existing collection to skip step 1
+    parser.add_argument('--collection', type=str, default=None,
+                       help='Existing domain collection name (skips step 1)')
+    
+    # Optional: run only specific steps
+    parser.add_argument('--steps', type=str, default=None,
+                       help='Comma-separated list of step numbers to run (e.g., "1,2,3")')
+    
+    args = parser.parse_args()
+    
     print("Food Insecurity Analysis Orchestrator")
     print("=====================================")
     print(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -112,13 +163,63 @@ def main():
     # Track results
     results = []
     all_success = True
+    collection_name = args.collection
+    
+    # Determine which steps to run
+    if args.steps:
+        steps_to_run = [int(s.strip()) for s in args.steps.split(',')]
+    else:
+        steps_to_run = list(range(1, len(STEPS) + 1))
     
     # Run each step
     for i, step in enumerate(STEPS, 1):
+        if i not in steps_to_run:
+            print(f"\n[Step {i}/{len(STEPS)}] {step['name']} - SKIPPED")
+            continue
+            
         print(f"\n[Step {i}/{len(STEPS)}] {step['name']}")
         print(f"Description: {step['description']}")
         
-        success, output = run_step(step['name'], step['script'])
+        # Build arguments for the step
+        step_args = []
+        
+        if i == 1:  # Create Domain step
+            if collection_name:
+                print("Skipping - using existing collection")
+                continue
+            step_args = [
+                '--name', args.name,
+                '--lat', str(args.lat),
+                '--lon', str(args.lon),
+                '--radius', str(args.radius)
+            ]
+        else:
+            # Other steps need the collection name
+            if not collection_name:
+                print("✗ No collection name available. Run step 1 first or provide --collection")
+                all_success = False
+                break
+            
+            if step.get('supports_collection', True):
+                step_args = ['--collection', collection_name]
+        
+        success, output = run_step(step['name'], step['script'], step_args)
+        
+        # Extract collection name from step 1 output
+        if i == 1 and success:
+            # The output already contains both stdout and stderr
+            extracted_name = extract_collection_name(output)
+            if not extracted_name:
+                # Try a simpler pattern match for d_* collection names
+                import re
+                match = re.search(r'd_[a-zA-Z0-9_]+', output)
+                if match:
+                    extracted_name = match.group(0)
+            
+            if extracted_name:
+                collection_name = extracted_name
+                print(f"\n✓ Created domain collection: {collection_name}")
+        
         results.append({
             'step': step['name'],
             'success': success,
@@ -135,11 +236,14 @@ def main():
     print("ORCHESTRATION SUMMARY")
     print(f"{'='*60}")
     print(f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"\nSteps completed: {len([r for r in results if r['success']])}/{len(STEPS)}")
+    print(f"\nSteps completed: {len([r for r in results if r['success']])}/{len([s for s in steps_to_run])}")
     
     for result in results:
         status = "✓" if result['success'] else "✗"
         print(f"{status} {result['step']}")
+    
+    if collection_name:
+        print(f"\nDomain collection: {collection_name}")
     
     if all_success:
         print("\n✓ All steps completed successfully!")
