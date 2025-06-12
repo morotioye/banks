@@ -18,7 +18,7 @@ export default async function handler(
     return res.status(400).json({ error: 'Invalid collection name' })
   }
 
-  // Run step 2 of the orchestrator to calculate scores
+  // Run step 2 of the orchestrator to calculate scores (vehicle access data should already be present)
   const scriptPath = path.join(process.cwd(), '..', 'samples', 'scripts', 'orchestrator.py')
   
   const env = {
@@ -30,7 +30,7 @@ export default async function handler(
   const pythonProcess = spawn('python3', [
     scriptPath,
     '--collection', collection,
-    '--steps', '2'  // Only run step 2 (calculate scores)
+    '--steps', '2'  // Only run step 2 (calculate scores) - vehicle access data is already present
   ], { env })
 
   let output = ''

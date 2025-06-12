@@ -97,6 +97,9 @@ def fetch_block_group_acs_data(county_fips_list):
         'C17002_002E',  # Under .50 ratio
         'C17002_003E',  # .50 to .99 ratio
         'B11001_001E',  # Total households (needed for SNAP distribution)
+        'B25044_001E',  # Total occupied housing units (for vehicle access)
+        'B25044_003E',  # Renter occupied, No vehicle available
+        'B25044_010E',  # Owner occupied, No vehicle available
         'NAME'
     ]
     
@@ -133,9 +136,10 @@ def fetch_block_group_acs_data(county_fips_list):
     df['tract_geoid'] = df['state'] + df['county'] + df['tract']
     
     # Convert numeric columns
-    numeric_cols = ['B01003_001E', 'C17002_001E', 'C17002_002E', 'C17002_003E', 'B11001_001E']
+    numeric_cols = ['B01003_001E', 'C17002_001E', 'C17002_002E', 'C17002_003E', 'B11001_001E', 
+                    'B25044_001E', 'B25044_003E', 'B25044_010E']
     for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
     
     # Calculate poverty rate
     df['poverty_rate'] = np.where(
@@ -144,8 +148,23 @@ def fetch_block_group_acs_data(county_fips_list):
         0
     )
     
+    # Calculate vehicle access rate
+    df['households_no_vehicle'] = df['B25044_003E'] + df['B25044_010E']
+    df['total_households_vehicle'] = df['B25044_001E']
+    df['vehicle_access_rate'] = np.where(
+        df['total_households_vehicle'] > 0,
+        1 - (df['households_no_vehicle'] / df['total_households_vehicle']),
+        0  # Default to 0 if no household data
+    )
+    
+    # Ensure vehicle access rate is between 0 and 1
+    df['vehicle_access_rate'] = df['vehicle_access_rate'].clip(0, 1)
+    
     logging.info(f"Total block groups with ACS data: {len(df)}")
     logging.info(f"Block groups with poverty data: {(df['poverty_rate'] > 0).sum()}")
+    logging.info(f"Block groups with vehicle access data: {(df['vehicle_access_rate'] >= 0).sum()}")
+    logging.info(f"Average vehicle access rate: {df['vehicle_access_rate'].mean():.3f}")
+    logging.info(f"Block groups with <50% vehicle access: {(df['vehicle_access_rate'] < 0.5).sum()}")
     
     return df
 
@@ -276,12 +295,40 @@ def process_county_batch(county_batch, blocks_gdf, acs_df, tract_snap_df):
         pop = 0
         poverty_rate = 0.0
         snap_rate = 0.0
+        vehicle_access_rate = 0.0
+        households_no_vehicle = 0
+        total_households_vehicle = 0
+        block_group_geoid = geoid  # Block group GEOID is the same as GEOID in this case
         
         if geoid in acs_df.index:
             acs_data = acs_df.loc[geoid]
             pop = int(acs_data.get('B01003_001E', 0))
             poverty_rate = float(acs_data.get('poverty_rate', 0))
             snap_rate = float(acs_data.get('snap_rate', 0))
+            vehicle_access_rate = float(acs_data.get('vehicle_access_rate', 0))
+            households_no_vehicle = int(acs_data.get('households_no_vehicle', 0))
+            total_households_vehicle = int(acs_data.get('total_households_vehicle', 0))
+        
+        # Calculate food insecurity score (improved weighted equation)
+        # Uses poverty, SNAP, and vehicle access with proper weighting
+        
+        # Economic hardship component (70% of score)
+        # Use max of poverty or SNAP rate (whichever is higher indicates more need)
+        economic_hardship = max(poverty_rate, snap_rate)
+        
+        # Transportation barrier component (30% of score)
+        # Convert vehicle access to barrier (1 - access_rate)
+        # If no vehicle access data, assume moderate barrier (0.2)
+        vehicle_barrier = 1 - vehicle_access_rate if vehicle_access_rate > 0 else 0.2
+        
+        # Weighted combination
+        food_insecurity_score = (
+            0.7 * economic_hardship +      # 70% economic factors
+            0.3 * vehicle_barrier          # 30% transportation access
+        ) * 10  # Scale to 0-10
+        
+        # Calculate need (population × score)
+        need = pop * food_insecurity_score if pop > 0 else 0
         
         # Create GeoJSON feature
         feature = {
@@ -291,7 +338,21 @@ def process_county_batch(county_batch, blocks_gdf, acs_df, tract_snap_df):
                 "geoid": geoid,
                 "pop": pop,
                 "poverty_rate": poverty_rate,
-                "snap_rate": snap_rate
+                "snap_rate": snap_rate,
+                "vehicle_access_rate": vehicle_access_rate,
+                "households_no_vehicle": households_no_vehicle,
+                "total_households": total_households_vehicle,
+                "block_group_geoid": block_group_geoid,
+                "food_insecurity_score": food_insecurity_score,
+                "need": need,
+                "score_calculated_at": datetime.utcnow().isoformat(),
+                "score_factors": {
+                    "poverty_rate": poverty_rate,
+                    "snap_rate": snap_rate,
+                    "economic_hardship": economic_hardship,
+                    "vehicle_access_rate": vehicle_access_rate,
+                    "vehicle_barrier": vehicle_barrier
+                }
             }
         }
         
@@ -375,12 +436,33 @@ def main():
         collection.create_index("properties.pop")
         collection.create_index("properties.poverty_rate")
         collection.create_index("properties.snap_rate")
+        collection.create_index("properties.vehicle_access_rate")
+        collection.create_index("properties.block_group_geoid")
+        collection.create_index("properties.food_insecurity_score")
+        collection.create_index("properties.need")
         
         # Summary statistics
         total_blocks = collection.count_documents({})
         blocks_with_pop = collection.count_documents({"properties.pop": {"$gt": 0}})
         blocks_with_poverty = collection.count_documents({"properties.poverty_rate": {"$gt": 0}})
         blocks_with_snap = collection.count_documents({"properties.snap_rate": {"$gt": 0}})
+        blocks_with_vehicle_access = collection.count_documents({"properties.vehicle_access_rate": {"$gte": 0}})
+        blocks_with_scores = collection.count_documents({"properties.food_insecurity_score": {"$gt": 0}})
+        
+        # Calculate score statistics
+        score_stats = list(collection.aggregate([
+            {"$match": {"properties.food_insecurity_score": {"$gt": 0}}},
+            {"$group": {
+                "_id": None,
+                "avg_score": {"$avg": "$properties.food_insecurity_score"},
+                "min_score": {"$min": "$properties.food_insecurity_score"},
+                "max_score": {"$max": "$properties.food_insecurity_score"}
+            }}
+        ]))
+        
+        avg_score = score_stats[0]["avg_score"] if score_stats else 0
+        min_score = score_stats[0]["min_score"] if score_stats else 0
+        max_score = score_stats[0]["max_score"] if score_stats else 0
         
         elapsed_time = time.time() - start_time
         
@@ -391,6 +473,12 @@ def main():
         logging.info(f"Block groups with population data: {blocks_with_pop:,} ({blocks_with_pop/total_blocks*100:.1f}%)")
         logging.info(f"Block groups with poverty data: {blocks_with_poverty:,} ({blocks_with_poverty/total_blocks*100:.1f}%)")
         logging.info(f"Block groups with SNAP data: {blocks_with_snap:,} ({blocks_with_snap/total_blocks*100:.1f}%)")
+        logging.info(f"Block groups with vehicle access data: {blocks_with_vehicle_access:,} ({blocks_with_vehicle_access/total_blocks*100:.1f}%)")
+        logging.info(f"Block groups with calculated scores: {blocks_with_scores:,} ({blocks_with_scores/total_blocks*100:.1f}%)")
+        logging.info("=" * 20 + " SCORE STATISTICS " + "=" * 20)
+        logging.info(f"Average food insecurity score: {avg_score:.2f}/10")
+        logging.info(f"Score range: {min_score:.2f} - {max_score:.2f}")
+        logging.info("=" * 60)
         logging.info(f"Processing time: {elapsed_time:.1f} seconds")
         logging.info(f"Database: {DB_NAME}")
         logging.info(f"Collection: {COLLECTION_NAME}")

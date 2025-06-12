@@ -40,20 +40,22 @@ VEHICLE_ACCESS_WEIGHT = 0.17
 def calculate_food_insecurity_score(poverty_snap_rate, distance_to_supermarket=0, vehicle_access_rate=1):
     """
     Calculate food insecurity score on a 0-10 scale.
-    For now, only using poverty/SNAP rate since other factors aren't available yet.
+    Now uses real vehicle access data when available.
     """
     # Normalize inputs to 0-1 scale
     poverty_snap_normalized = min(poverty_snap_rate, 1.0)
     
-    # For now, assume best case for missing data
+    # Distance factor (still placeholder for future implementation)
     distance_normalized = 0  # Will be updated in later steps
-    vehicle_access_normalized = 1  # Will be updated in later steps
+    
+    # Vehicle access factor (now uses real data)
+    vehicle_access_normalized = min(max(vehicle_access_rate, 0.0), 1.0)  # Ensure 0-1 range
     
     # Calculate weighted score
     score = (
         POVERTY_SNAP_WEIGHT * poverty_snap_normalized +
         DISTANCE_WEIGHT * distance_normalized +
-        VEHICLE_ACCESS_WEIGHT * (1 - vehicle_access_normalized)
+        VEHICLE_ACCESS_WEIGHT * (1 - vehicle_access_normalized)  # Higher score = less vehicle access
     )
     
     # Scale to 0-10
@@ -103,12 +105,17 @@ def process_domain_collection(collection_name):
         pop = properties.get('pop', 0)
         poverty_rate = properties.get('poverty_rate', 0)
         snap_rate = properties.get('snap_rate', 0)
+        vehicle_access_rate = properties.get('vehicle_access_rate', 1.0)  # Default to 1.0 (full access) if missing
         
         # Calculate combined poverty/SNAP rate (average)
         poverty_snap_rate = (poverty_rate + snap_rate) / 2
         
-        # Calculate food insecurity score
-        food_insecurity_score = calculate_food_insecurity_score(poverty_snap_rate)
+        # Calculate food insecurity score (now includes vehicle access)
+        food_insecurity_score = calculate_food_insecurity_score(
+            poverty_snap_rate, 
+            distance_to_supermarket=0,  # Still placeholder
+            vehicle_access_rate=vehicle_access_rate
+        )
         
         # Calculate need
         need = calculate_need(pop, food_insecurity_score)
@@ -127,7 +134,7 @@ def process_domain_collection(collection_name):
                         'snap_rate': snap_rate,
                         'poverty_snap_rate': poverty_snap_rate,
                         'distance_to_supermarket': 0,  # Placeholder
-                        'vehicle_access_rate': 1  # Placeholder
+                        'vehicle_access_rate': vehicle_access_rate  # Now uses real data
                     }
                 }
             }

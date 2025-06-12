@@ -24,23 +24,19 @@ STEPS = [
         'description': 'Create domain collection from census blocks within radius',
         'supports_collection': False  # This step creates the collection
     },
-    {
-        'name': 'Calculate Food Insecurity Scores',
-        'script': '02_calculate_food_insecurity.py',
-        'description': 'Calculate initial food insecurity scores based on poverty and SNAP rates',
-        'supports_collection': True
-    },
+    # Note: Score calculation is now done during initial census block collection
+    # Domain creation simply copies pre-calculated blocks
+    # {
+    #     'name': 'Calculate Food Insecurity Scores',
+    #     'script': '02_calculate_food_insecurity.py',
+    #     'description': 'Calculate initial food insecurity scores based on poverty and SNAP rates',
+    #     'supports_collection': True
+    # },
     # Future steps will be added here:
     # {
     #     'name': 'Find Nearest Supermarkets',
-    #     'script': '03_find_supermarkets.py',
+    #     'script': '04_find_supermarkets.py',
     #     'description': 'Calculate distance to nearest supermarket for each block',
-    #     'supports_collection': True
-    # },
-    # {
-    #     'name': 'Calculate Vehicle Access',
-    #     'script': '04_vehicle_access.py',
-    #     'description': 'Determine vehicle access rates per block',
     #     'supports_collection': True
     # },
     # {

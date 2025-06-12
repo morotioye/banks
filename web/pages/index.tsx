@@ -18,15 +18,75 @@ interface Domain {
   created_at?: string
 }
 
+// Visualization mode configurations
+const VISUALIZATION_MODES = {
+  food_insecurity_score: {
+    label: 'Food Insecurity Score',
+    property: 'food_insecurity_score',
+    ranges: [
+      { min: 0, max: 3, color: '#34D399', label: 'Low (0-3)' },
+      { min: 3, max: 6, color: '#FBBF24', label: 'Medium (3-6)' },
+      { min: 6, max: 10, color: '#F87171', label: 'High (6-10)' }
+    ],
+    multiplier: 1,
+    format: (value: number) => `${value.toFixed(1)}/10`
+  },
+  poverty_rate: {
+    label: 'Poverty Rate',
+    property: 'poverty_rate',
+    ranges: [
+      { min: 0, max: 0.15, color: '#34D399', label: 'Low (0-15%)' },
+      { min: 0.15, max: 0.30, color: '#FBBF24', label: 'Medium (15-30%)' },
+      { min: 0.30, max: 1, color: '#F87171', label: 'High (30%+)' }
+    ],
+    multiplier: 100,
+    format: (value: number) => `${(value * 100).toFixed(1)}%`
+  },
+  snap_rate: {
+    label: 'SNAP Rate',
+    property: 'snap_rate',
+    ranges: [
+      { min: 0, max: 0.10, color: '#34D399', label: 'Low (0-10%)' },
+      { min: 0.10, max: 0.25, color: '#FBBF24', label: 'Medium (10-25%)' },
+      { min: 0.25, max: 1, color: '#F87171', label: 'High (25%+)' }
+    ],
+    multiplier: 100,
+    format: (value: number) => `${(value * 100).toFixed(1)}%`
+  },
+  vehicle_access_rate: {
+    label: 'Vehicle Access Rate',
+    property: 'vehicle_access_rate',
+    ranges: [
+      { min: 0, max: 0.7, color: '#F87171', label: 'Low (0-70%)' },
+      { min: 0.7, max: 0.9, color: '#FBBF24', label: 'Medium (70-90%)' },
+      { min: 0.9, max: 1, color: '#34D399', label: 'High (90%+)' }
+    ],
+    multiplier: 100,
+    format: (value: number) => `${(value * 100).toFixed(1)}%`
+  },
+  population: {
+    label: 'Population',
+    property: 'pop',
+    ranges: [
+      { min: 0, max: 1000, color: '#34D399', label: 'Low (0-1K)' },
+      { min: 1000, max: 3000, color: '#FBBF24', label: 'Medium (1K-3K)' },
+      { min: 3000, max: 50000, color: '#F87171', label: 'High (3K+)' }
+    ],
+    multiplier: 1,
+    format: (value: number) => value.toLocaleString()
+  }
+}
+
 export default function Home() {
   const [domains, setDomains] = useState<Domain[]>([])
   const [selectedDomain, setSelectedDomain] = useState<string>('')
   const [blocks, setBlocks] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(false)
+  const [visualizationMode, setVisualizationMode] = useState<string>('food_insecurity_score')
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [calculatingScores, setCalculatingScores] = useState<string | null>(null)
+  // Note: calculatingScores state removed - no longer needed
   const [newDomain, setNewDomain] = useState({
     name: '',
     lat: 34.0522,
@@ -92,34 +152,8 @@ export default function Home() {
     }
   }
 
-  // Calculate food insecurity scores
-  const calculateScores = async (collection: string) => {
-    setCalculatingScores(collection)
-    try {
-      const response = await fetch('/api/calculate-scores', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ collection })
-      })
-
-      const data = await response.json()
-      
-      if (response.ok) {
-        alert('Food insecurity scores calculated successfully!')
-        // Refresh blocks if this is the selected domain
-        if (selectedDomain === collection) {
-          fetchBlocks(collection)
-        }
-      } else {
-        alert(data.error || 'Failed to calculate scores')
-      }
-    } catch (error) {
-      console.error('Error calculating scores:', error)
-      alert('Failed to calculate scores')
-    } finally {
-      setCalculatingScores(null)
-    }
-  }
+  // Note: Score calculation is now done during census block collection
+  // No need for on-demand score calculation anymore
 
   // Initial load
   useEffect(() => {
@@ -172,6 +206,56 @@ export default function Home() {
           <p style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>
             Domain-based visualization
           </p>
+        </div>
+
+        {/* Visualization Mode Selector */}
+        <div style={{ padding: '16px', borderBottom: '1px solid #e5e7eb' }}>
+          <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#374151', margin: '0 0 8px 0' }}>
+            Map Visualization
+          </h3>
+          <select
+            value={visualizationMode}
+            onChange={(e) => setVisualizationMode(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              fontSize: '14px',
+              backgroundColor: 'white',
+              cursor: 'pointer'
+            }}
+          >
+            {Object.entries(VISUALIZATION_MODES).map(([key, config]) => (
+              <option key={key} value={key}>
+                {config.label}
+              </option>
+            ))}
+          </select>
+          
+          {/* Dynamic Legend */}
+          <div style={{ marginTop: '12px' }}>
+            <div style={{ fontSize: '12px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
+              Legend
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ width: '12px', height: '12px', backgroundColor: '#60A5FA', borderRadius: '2px' }}></div>
+                <span style={{ fontSize: '12px', color: '#6b7280' }}>No data</span>
+              </div>
+                             {(VISUALIZATION_MODES as any)[visualizationMode]?.ranges.map((range: any, index: number) => (
+                <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ 
+                    width: '12px', 
+                    height: '12px', 
+                    backgroundColor: range.color, 
+                    borderRadius: '2px' 
+                  }}></div>
+                  <span style={{ fontSize: '12px', color: '#374151' }}>{range.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Domain List */}
@@ -240,30 +324,7 @@ export default function Home() {
                       </p>
                     )}
                   </div>
-                  {selectedDomain === domain.collection_name && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        calculateScores(domain.collection_name)
-                      }}
-                      disabled={calculatingScores === domain.collection_name}
-                      style={{
-                        padding: '4px 8px',
-                        backgroundColor: calculatingScores === domain.collection_name ? '#9ca3af' : '#10b981',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        cursor: calculatingScores === domain.collection_name ? 'not-allowed' : 'pointer',
-                        transition: 'background-color 0.2s',
-                        whiteSpace: 'nowrap'
-                      }}
-                      onMouseEnter={(e) => !calculatingScores && (e.currentTarget.style.backgroundColor = '#059669')}
-                      onMouseLeave={(e) => !calculatingScores && (e.currentTarget.style.backgroundColor = '#10b981')}
-                    >
-                      {calculatingScores === domain.collection_name ? 'Calculating...' : 'Calculate Scores'}
-                    </button>
-                  )}
+                  {/* Note: Calculate Scores button removed - scores are now pre-calculated */}
                 </div>
               ))}
             </div>
@@ -309,41 +370,7 @@ export default function Home() {
       <div style={{ flex: 1, position: 'relative' }}>
         {selectedDomain ? (
           <>
-            <Map blocks={blocks} />
-            
-            {/* Legend */}
-            <div style={{
-              position: 'absolute',
-              bottom: '24px',
-              right: '24px',
-              backgroundColor: 'white',
-              padding: '16px',
-              borderRadius: '8px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              fontSize: '14px'
-            }}>
-              <h3 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600' }}>
-                Food Insecurity Score
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ width: '16px', height: '16px', backgroundColor: '#60A5FA', borderRadius: '2px' }}></div>
-                  <span>No data</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ width: '16px', height: '16px', backgroundColor: '#34D399', borderRadius: '2px' }}></div>
-                  <span>Low (0-3)</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ width: '16px', height: '16px', backgroundColor: '#FBBF24', borderRadius: '2px' }}></div>
-                  <span>Medium (3-7)</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ width: '16px', height: '16px', backgroundColor: '#F87171', borderRadius: '2px' }}></div>
-                  <span>High (7-10)</span>
-                </div>
-              </div>
-            </div>
+            <Map blocks={blocks} visualizationMode={visualizationMode} />
 
             {/* Loading indicator */}
             {loading && (

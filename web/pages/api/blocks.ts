@@ -49,6 +49,9 @@ export default async function handler(
         snap_rate: typeof block.properties?.snap_rate === 'object' ?
           (block.properties.snap_rate.$numberDouble || 0) :
           (block.properties?.snap_rate || 0),
+        vehicle_access_rate: typeof block.properties?.vehicle_access_rate === 'object' ?
+          (block.properties.vehicle_access_rate.$numberDouble || 0) :
+          (block.properties?.vehicle_access_rate || 0),
         food_insecurity_score: block.properties?.food_insecurity_score || 0
       }
     }))

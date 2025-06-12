@@ -127,14 +127,37 @@ def create_domain(domain_name, center_lat, center_lon, radius_miles):
     domain_collection.create_index("properties.pop")
     domain_collection.create_index("properties.poverty_rate")
     domain_collection.create_index("properties.snap_rate")
+    domain_collection.create_index("properties.vehicle_access_rate")
+    domain_collection.create_index("properties.block_group_geoid")
     
     # Calculate domain statistics
     stats = {
         'total_blocks': blocks_copied,
         'total_population': total_population,
         'blocks_with_poverty_data': domain_collection.count_documents({"properties.poverty_rate": {"$gt": 0}}),
-        'blocks_with_snap_data': domain_collection.count_documents({"properties.snap_rate": {"$gt": 0}})
+        'blocks_with_snap_data': domain_collection.count_documents({"properties.snap_rate": {"$gt": 0}}),
+        'blocks_with_scores': domain_collection.count_documents({"properties.food_insecurity_score": {"$gte": 0}})
     }
+    
+    # Calculate score statistics for the domain
+    score_stats = list(domain_collection.aggregate([
+        {"$match": {"properties.food_insecurity_score": {"$gt": 0}}},
+        {"$group": {
+            "_id": None,
+            "avg_score": {"$avg": "$properties.food_insecurity_score"},
+            "min_score": {"$min": "$properties.food_insecurity_score"},
+            "max_score": {"$max": "$properties.food_insecurity_score"},
+            "total_need": {"$sum": "$properties.need"}
+        }}
+    ]))
+    
+    if score_stats:
+        stats.update({
+            'avg_food_insecurity_score': score_stats[0]['avg_score'],
+            'min_food_insecurity_score': score_stats[0]['min_score'],
+            'max_food_insecurity_score': score_stats[0]['max_score'],
+            'total_need': score_stats[0]['total_need']
+        })
     
     # Create domain metadata document
     metadata_collection = db['domain_metadata']
@@ -162,6 +185,14 @@ def create_domain(domain_name, center_lat, center_lon, radius_miles):
     logging.info(f"Total population: {total_population:,}")
     logging.info(f"Blocks with poverty data: {stats['blocks_with_poverty_data']:,}")
     logging.info(f"Blocks with SNAP data: {stats['blocks_with_snap_data']:,}")
+    logging.info(f"Blocks with scores: {stats['blocks_with_scores']:,}")
+    
+    if 'avg_food_insecurity_score' in stats:
+        logging.info("=" * 20 + " DOMAIN SCORE STATISTICS " + "=" * 20)
+        logging.info(f"Average food insecurity score: {stats['avg_food_insecurity_score']:.2f}/10")
+        logging.info(f"Score range: {stats['min_food_insecurity_score']:.2f} - {stats['max_food_insecurity_score']:.2f}")
+        logging.info(f"Total need: {stats['total_need']:.0f}")
+        logging.info("=" * 60)
     
     return collection_name
 

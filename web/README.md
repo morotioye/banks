@@ -22,8 +22,9 @@ npm install
 
 2. Create a `.env.local` file:
 ```
-MONGODB_URI=mongodb://localhost:27017
-DB_NAME=food_insecurity_test
+MONGODB_URI=your_uri
+DB_NAME=dbname
+CENSUS_API_KEY=key
 ```
 
 3. Run the development server:
