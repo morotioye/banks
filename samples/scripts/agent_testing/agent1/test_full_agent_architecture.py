@@ -25,7 +25,6 @@ from typing import List, Dict, Any, Tuple
 from dataclasses import dataclass
 from dotenv import load_dotenv
 from pymongo import MongoClient
-import googlemaps
 from geopy.distance import geodesic
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -54,8 +53,6 @@ logger = logging.getLogger(__name__)
 # Configuration
 MONGO_URI = os.getenv('MONGO_DB_URI', 'mongodb://localhost:27017/')
 DB_NAME = os.getenv('TEST_DB_NAME', 'food_insecurity_test')
-GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 @dataclass
 class Cell:
@@ -320,9 +317,6 @@ class FoodBankOptimizationSystem:
         self.budget = budget
         self.db_client = MongoClient(MONGO_URI)
         self.db = self.db_client[DB_NAME]
-        
-        # Initialize Google Maps client if API key available
-        self.gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY) if GOOGLE_MAPS_API_KEY else None
         
         # Initialize ADK or mock implementation
         if ADK_AVAILABLE:

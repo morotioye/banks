@@ -20,15 +20,29 @@ def install_dependencies():
     logger.info("🔧 Installing dependencies...")
     
     try:
+        # Look for requirements.txt in parent directories
+        requirements_paths = [
+            "requirements.txt",
+            "../requirements.txt", 
+            "../../requirements.txt"
+        ]
+        
+        requirements_file = None
+        for path in requirements_paths:
+            if Path(path).exists():
+                requirements_file = path
+                break
+        
+        if not requirements_file:
+            logger.error("❌ requirements.txt not found in current or parent directories!")
+            return False
+            
         # Install from requirements.txt
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", requirements_file])
         logger.info("✅ Dependencies installed successfully!")
         return True
     except subprocess.CalledProcessError as e:
         logger.error(f"❌ Failed to install dependencies: {e}")
-        return False
-    except FileNotFoundError:
-        logger.error("❌ requirements.txt not found!")
         return False
 
 def check_environment():
@@ -41,40 +55,37 @@ def check_environment():
         logger.warning("⚠️  .env file not found - creating template...")
         create_env_template()
     
-    # Check required environment variables
-    required_vars = [
+    # Check required environment variables (all optional for mock testing)
+    optional_vars = [
         'MONGO_DB_URI',
-        'TEST_DB_NAME',
-        'GOOGLE_MAPS_API_KEY',
-        'GEMINI_API_KEY'
+        'TEST_DB_NAME'
     ]
     
     missing_vars = []
-    for var in required_vars:
+    for var in optional_vars:
         if not os.getenv(var):
             missing_vars.append(var)
     
     if missing_vars:
-        logger.warning(f"⚠️  Missing environment variables: {', '.join(missing_vars)}")
+        logger.info(f"ℹ️  Optional environment variables not set: {', '.join(missing_vars)}")
         logger.info("   The system will use default values or mock implementations.")
     else:
-        logger.info("✅ Environment configuration looks good!")
+        logger.info("✅ All optional environment variables are configured!")
     
     return True
 
 def create_env_template():
     """Create a template .env file."""
     template = """# Food Bank Optimization System Configuration
-# MongoDB Configuration
+# All variables are OPTIONAL - system works with mock data by default
+
+# MongoDB Configuration (only needed for real geographic data)
 MONGO_DB_URI=mongodb://localhost:27017/
-TEST_DB_NAME=food_insecurity_test
+TEST_DB_NAME=testbank_test
 
-# Google Cloud APIs
-GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# Optional: OpenAI API for alternative implementation
-OPENAI_API_KEY=your_openai_api_key_here
+# Optional: API keys for real implementations
+# GEMINI_API_KEY=your_gemini_api_key_here
+# OPENAI_API_KEY=your_openai_api_key_here
 
 # System Configuration
 MAX_CONCURRENT_AGENTS=6

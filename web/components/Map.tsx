@@ -179,7 +179,7 @@ export default function Map({ blocks, visualizationMode }: MapProps) {
         hasInitializedBounds.current = true
       }
     }
-  }, [blocks])
+  }, [blocks, visualizationMode])
 
   return <div id="map" style={{ width: '100%', height: '100%' }} />
 } 
