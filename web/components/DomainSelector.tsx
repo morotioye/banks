@@ -2,6 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
+// Fix for default markers
+delete (L.Icon.Default.prototype as any)._getIconUrl
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+})
+
 interface DomainSelectorProps {
   lat: number
   lon: number
@@ -85,32 +93,39 @@ export default function DomainSelector({ lat, lon, radius, onLocationChange, onR
 
     setIsOutOfBounds(!isInBounds)
 
-    // Pan to marker
-    mapRef.current.setView([lat, lon], mapRef.current.getZoom())
+    // Only pan to marker if location changed significantly (avoid zoom changes on refresh)
+    const currentCenter = mapRef.current.getCenter()
+    const distance = currentCenter.distanceTo(L.latLng(lat, lon))
+    if (distance > 1000) { // Only move if more than 1km away
+      mapRef.current.setView([lat, lon], mapRef.current.getZoom())
+    }
   }, [lat, lon, radius])
 
   return (
-    <div>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div id="domain-selector-map" style={{ 
         width: '100%', 
-        height: '400px', 
-        borderRadius: '12px', 
-        marginBottom: '16px',
-        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+        height: '100%'
       }} />
       
       {isOutOfBounds && (
         <div style={{
+          position: 'absolute',
+          top: '16px',
+          left: '16px',
+          right: '16px',
           padding: '12px 16px',
           backgroundColor: '#fef2f2',
           border: '1px solid #fecaca',
           borderRadius: '8px',
           color: '#dc2626',
           fontSize: '14px',
-          marginBottom: '16px',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px'
+          gap: '8px',
+          fontFamily: '"Funnel Display", system-ui, sans-serif',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+          zIndex: 1000
         }}>
           <span style={{ fontSize: '18px' }}>⚠️</span>
           <div>
@@ -122,67 +137,26 @@ export default function DomainSelector({ lat, lon, radius, onLocationChange, onR
         </div>
       )}
 
-      <div style={{ 
-        backgroundColor: '#f9fafb', 
-        padding: '16px', 
+      {/* Map Instructions Overlay */}
+      <div style={{
+        position: 'absolute',
+        bottom: '16px',
+        left: '16px',
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        padding: '12px 16px',
         borderRadius: '8px',
-        marginBottom: '16px'
+        fontSize: '13px',
+        color: '#7f8c8d',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        fontFamily: '"Funnel Display", system-ui, sans-serif',
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+        backdropFilter: 'blur(4px)',
+        zIndex: 1000
       }}>
-        <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '16px' }}>📍</span>
-          Click anywhere on the map to set the center point
-        </div>
-
-        <div style={{ marginBottom: '4px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <label style={{ fontSize: '14px', fontWeight: '500', color: '#374151' }}>
-              Domain Radius
-            </label>
-            <div style={{
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              padding: '4px 12px',
-              borderRadius: '20px',
-              fontSize: '14px',
-              fontWeight: '500'
-            }}>
-              {radius} miles
-            </div>
-          </div>
-          
-          <div style={{ position: 'relative', height: '40px', display: 'flex', alignItems: 'center' }}>
-            <input
-              type="range"
-              min="0.5"
-              max="10"
-              step="0.1"
-              value={radius}
-              onChange={(e) => onRadiusChange(parseFloat(e.target.value))}
-              style={{ 
-                width: '100%',
-                height: '6px',
-                borderRadius: '3px',
-                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(radius - 0.5) / 9.5 * 100}%, #e5e7eb ${(radius - 0.5) / 9.5 * 100}%, #e5e7eb 100%)`,
-                outline: 'none',
-                WebkitAppearance: 'none',
-                cursor: 'pointer'
-              }}
-            />
-
-          </div>
-          
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            marginTop: '8px',
-            fontSize: '12px',
-            color: '#9ca3af'
-          }}>
-            <span>0.5 mi</span>
-            <span>5 mi</span>
-            <span>10 mi</span>
-          </div>
-        </div>
+        <span style={{ fontSize: '16px' }}>📍</span>
+        Click anywhere on the map to set the center point
       </div>
     </div>
   )

@@ -86,6 +86,7 @@ function getColorForVisualization(properties: any, visualizationMode: string): s
 export default function Map({ blocks, visualizationMode }: MapProps) {
   const mapRef = useRef<L.Map | null>(null)
   const layerGroupRef = useRef<L.LayerGroup | null>(null)
+  const hasInitializedBounds = useRef<boolean>(false)
 
   // Initialize map
   useEffect(() => {
@@ -114,7 +115,11 @@ export default function Map({ blocks, visualizationMode }: MapProps) {
     // Clear existing layers
     layerGroupRef.current.clearLayers()
 
-    if (blocks.length === 0) return
+    if (blocks.length === 0) {
+      // Reset bounds when no blocks (domain cleared)
+      hasInitializedBounds.current = false
+      return
+    }
 
     // Add blocks to map
     blocks.forEach(block => {
@@ -166,11 +171,12 @@ export default function Map({ blocks, visualizationMode }: MapProps) {
       }
     })
 
-    // Fit map to bounds if blocks exist
-    if (blocks.length > 0) {
+    // Fit map to bounds only on first load (not on refreshes)
+    if (blocks.length > 0 && !hasInitializedBounds.current) {
       const group = L.featureGroup(layerGroupRef.current!.getLayers())
       if (group.getLayers().length > 0) {
         mapRef.current.fitBounds(group.getBounds().pad(0.1))
+        hasInitializedBounds.current = true
       }
     }
   }, [blocks])

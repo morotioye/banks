@@ -7,6 +7,9 @@ module.exports = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        'sans': ['"Funnel Display"', 'system-ui', '-apple-system', 'sans-serif'],
+      },
       colors: {
         'primary': '#3B82F6',
         'secondary': '#10B981',
