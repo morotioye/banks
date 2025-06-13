@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import Head from 'next/head'
-import { Drumstick, ChevronDown, Trash2, Play, X } from 'lucide-react'
+import { ChevronDown, Trash2, Play, X } from 'lucide-react'
 
 // Dynamic import to avoid SSR issues with Leaflet
 const Map = dynamic(() => import('../components/Map'), { ssr: false })
@@ -94,6 +94,7 @@ export default function Home() {
   const [optimizationBudget, setOptimizationBudget] = useState('')
   const [optimizationResult, setOptimizationResult] = useState<any>(null)
   const [isOptimizing, setIsOptimizing] = useState(false)
+  const [agentSteps, setAgentSteps] = useState<any[]>([])
   // Note: calculatingScores state removed - no longer needed
   const [newDomain, setNewDomain] = useState({
     name: '',
@@ -220,9 +221,10 @@ export default function Home() {
   const startOptimization = async () => {
     setIsOptimizing(true)
     setOptimizationResult(null)
+    setAgentSteps([])
 
     try {
-      const response = await fetch('/api/optimize-locations', {
+      const response = await fetch('/api/optimize-locations-stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -233,39 +235,64 @@ export default function Home() {
         }),
       })
 
-      const data = await response.json()
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to start optimization')
+      }
 
-      if (data.status === 'in_progress' && data.jobId) {
-        // Poll for results
-        const pollInterval = setInterval(async () => {
-          try {
-            const pollResponse = await fetch(`/api/optimize-locations?jobId=${data.jobId}`)
-            const pollData = await pollResponse.json()
+      // Set up SSE reader
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
 
-            if (pollData.status === 'success') {
-              setOptimizationResult(pollData)
-              setIsOptimizing(false)
-              clearInterval(pollInterval)
-            } else if (pollData.status === 'error') {
-              setOptimizationResult(pollData)
-              setIsOptimizing(false)
-              clearInterval(pollInterval)
+      if (!reader) {
+        throw new Error('No response body')
+      }
+
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              
+              if (data.type === 'agent_step') {
+                setAgentSteps(prev => [...prev, {
+                  ...data,
+                  timestamp: new Date()
+                }])
+              } else if (data.type === 'result') {
+                setOptimizationResult({
+                  status: 'success',
+                  data: data.data
+                })
+                setIsOptimizing(false)
+              } else if (data.type === 'error') {
+                setOptimizationResult({
+                  status: 'error',
+                  error: data.message
+                })
+                setIsOptimizing(false)
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e)
             }
-          } catch (error) {
-            console.error('Error polling optimization status:', error)
-            setIsOptimizing(false)
-            clearInterval(pollInterval)
           }
-        }, 2000)
-      } else if (data.status === 'error') {
-        setOptimizationResult(data)
-        setIsOptimizing(false)
+        }
       }
     } catch (error) {
       console.error('Error starting optimization:', error)
       setOptimizationResult({
         status: 'error',
-        error: 'Failed to start optimization'
+        error: error instanceof Error ? error.message : 'Failed to start optimization'
       })
       setIsOptimizing(false)
     }
@@ -292,8 +319,24 @@ export default function Home() {
         {/* Header */}
         <div style={{ padding: '24px', borderBottom: '1px solid #e8eaed', backgroundColor: '#ffffff' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <Drumstick size={28} style={{ color: '#e67e22' }} />
-            <h1 style={{ fontSize: '24px', fontWeight: '700', margin: 0, color: '#2c3e50', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
+            <h1 
+              onClick={() => window.location.href = '/'}
+              style={{ 
+                fontSize: '24px', 
+                fontWeight: '700', 
+                margin: 0, 
+                color: '#2c3e50', 
+                fontFamily: '"Funnel Display", system-ui, sans-serif',
+                cursor: 'pointer',
+                transition: 'color 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = '#fb923c'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = '#2c3e50'
+              }}
+            >
               banks
             </h1>
             {selectedDomain && (
@@ -579,10 +622,10 @@ export default function Home() {
                     {domain.center && domain.center.coordinates ? (
                       <>
                         <p style={{ fontSize: '12px', color: '#7f8c8d', margin: '6px 0 2px 0', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                          📍 {domain.center.coordinates[1].toFixed(4)}, {domain.center.coordinates[0].toFixed(4)}
+                          {domain.center.coordinates[1].toFixed(4)}, {domain.center.coordinates[0].toFixed(4)}
                         </p>
                         <p style={{ fontSize: '12px', color: '#95a5a6', margin: '2px 0 0 0', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                          🎯 {domain.radius_miles} mile radius • {domain.total_blocks} blocks
+                          {domain.radius_miles} mile radius • {domain.total_blocks} blocks
                         </p>
                       </>
                     ) : (
@@ -709,58 +752,143 @@ export default function Home() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 1000,
-          backdropFilter: 'blur(4px)'
+          backdropFilter: 'blur(8px)'
         }}>
           <div style={{
             backgroundColor: 'white',
             borderRadius: '16px',
-            padding: '32px',
-            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.15)',
-            width: '400px',
-            position: 'relative'
+            padding: '48px',
+            boxShadow: '0 25px 50px rgba(0, 0, 0, 0.2)',
+            width: '480px',
+            position: 'relative',
+            transform: 'translateY(-20px)'
           }}>
+            {/* Close button */}
+            <button
+              onClick={() => {
+                setOptimizationBudget('');
+                setShowBudgetInput(false);
+              }}
+              style={{
+                position: 'absolute',
+                top: '20px',
+                right: '20px',
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                border: 'none',
+                backgroundColor: '#f3f4f6',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#e5e7eb';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#f3f4f6';
+              }}
+            >
+              <X size={18} style={{ color: '#6b7280' }} />
+            </button>
+
             <h2 style={{
-              fontSize: '24px',
-              fontWeight: '700',
-              color: '#2c3e50',
-              marginBottom: '24px',
-              fontFamily: '"Funnel Display", system-ui, sans-serif'
+              fontSize: '32px',
+              fontWeight: '800',
+              color: '#000',
+              marginBottom: '12px',
+              fontFamily: '"Funnel Display", system-ui, sans-serif',
+              letterSpacing: '-0.02em'
             }}>
-              Optimization Budget
+              Investment Budget
             </h2>
+            <p style={{
+              fontSize: '17px',
+              color: '#666',
+              marginBottom: '40px',
+              fontFamily: '"Funnel Display", system-ui, sans-serif',
+              lineHeight: '1.5'
+            }}>
+              How much would you like to invest in establishing food banks? We'll optimize locations to maximize impact within your budget.
+            </p>
+
+            {/* Quick select buttons */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '12px',
+              marginBottom: '24px'
+            }}>
+              {[1000000, 2500000, 5000000].map((amount) => (
+                <button
+                  key={amount}
+                  onClick={() => setOptimizationBudget(amount.toString())}
+                  style={{
+                    padding: '12px',
+                    backgroundColor: optimizationBudget === amount.toString() ? '#000' : '#f9fafb',
+                    color: optimizationBudget === amount.toString() ? '#fff' : '#374151',
+                    border: `2px solid ${optimizationBudget === amount.toString() ? '#000' : '#e5e7eb'}`,
+                    borderRadius: '8px',
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    fontFamily: '"Funnel Display", system-ui, sans-serif'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (optimizationBudget !== amount.toString()) {
+                      e.currentTarget.style.backgroundColor = '#f3f4f6';
+                      e.currentTarget.style.borderColor = '#d1d5db';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (optimizationBudget !== amount.toString()) {
+                      e.currentTarget.style.backgroundColor = '#f9fafb';
+                      e.currentTarget.style.borderColor = '#e5e7eb';
+                    }
+                  }}
+                >
+                  ${(amount / 1000000).toFixed(1)}M
+                </button>
+              ))}
+            </div>
             
-            <div style={{ marginBottom: '24px' }}>
+            <div style={{ marginBottom: '32px' }}>
               <label style={{
                 display: 'block',
                 fontSize: '14px',
-                color: '#7f8c8d',
+                color: '#374151',
                 marginBottom: '8px',
-                fontFamily: '"Funnel Display", system-ui, sans-serif'
+                fontFamily: '"Funnel Display", system-ui, sans-serif',
+                fontWeight: '600'
               }}>
-                Enter your budget for food bank optimization
+                Custom Amount
               </label>
               <div style={{
                 position: 'relative'
               }}>
                 <span style={{
                   position: 'absolute',
-                  left: '16px',
+                  left: '50%',
+                  marginLeft: '-122px',
                   top: '50%',
                   transform: 'translateY(-50%)',
                   fontSize: '18px',
-                  color: '#95a5a6',
+                  color: '#9ca3af',
                   fontWeight: '500'
                 }}>
                   $
                 </span>
                 <input
                   type="text"
-                  value={optimizationBudget}
+                  value={optimizationBudget ? parseInt(optimizationBudget).toLocaleString() : ''}
                   onChange={(e) => {
                     const value = e.target.value.replace(/[^0-9]/g, '');
                     setOptimizationBudget(value);
@@ -778,114 +906,117 @@ export default function Home() {
                       setShowBudgetInput(false);
                     }
                   }}
-                  placeholder="500000"
+                  placeholder="1,000,000"
                   style={{
-                    width: '100%',
-                    padding: '16px 16px 16px 40px',
-                    fontSize: '18px',
-                    border: '2px solid #e8eaed',
+                    width: '280px',
+                    padding: '14px 18px 14px 44px',
+                    fontSize: '20px',
+                    border: '2px solid #e5e7eb',
                     borderRadius: '12px',
                     outline: 'none',
                     transition: 'all 0.2s ease',
                     fontFamily: '"Funnel Display", system-ui, sans-serif',
-                    fontWeight: '500'
+                    fontWeight: '600',
+                    backgroundColor: '#fafafa',
+                    margin: '0 auto',
+                    display: 'block'
                   }}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = '#74b9ff';
-                    e.currentTarget.style.boxShadow = '0 0 0 3px rgba(116, 185, 255, 0.1)';
+                    e.currentTarget.style.borderColor = '#000';
+                    e.currentTarget.style.backgroundColor = '#fff';
                   }}
                   onBlur={(e) => {
-                    e.currentTarget.style.borderColor = '#e8eaed';
-                    e.currentTarget.style.boxShadow = 'none';
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                    e.currentTarget.style.backgroundColor = '#fafafa';
                   }}
                   autoFocus
                 />
               </div>
-              {optimizationBudget && parseFloat(optimizationBudget) < 1000000 && (
-                <p style={{
-                  fontSize: '12px',
-                  color: '#e74c3c',
-                  marginTop: '8px',
-                  fontFamily: '"Funnel Display", system-ui, sans-serif'
-                }}>
-                  Minimum budget is $1,000,000
-                </p>
-              )}
+              
+              {/* Budget info */}
+              <div style={{
+                marginTop: '16px',
+                padding: '12px 16px',
+                backgroundColor: optimizationBudget && parseFloat(optimizationBudget) < 1000000 ? '#fef2f2' : '#f0f9ff',
+                borderRadius: '8px',
+                border: `1px solid ${optimizationBudget && parseFloat(optimizationBudget) < 1000000 ? '#fecaca' : '#bfdbfe'}`
+              }}>
+                {optimizationBudget && parseFloat(optimizationBudget) < 1000000 ? (
+                  <p style={{
+                    fontSize: '13px',
+                    color: '#dc2626',
+                    margin: 0,
+                    fontFamily: '"Funnel Display", system-ui, sans-serif'
+                  }}>
+                    Minimum budget is $1,000,000 to establish at least one food bank
+                  </p>
+                ) : (
+                  <p style={{
+                    fontSize: '13px',
+                    color: '#1e40af',
+                    margin: 0,
+                    fontFamily: '"Funnel Display", system-ui, sans-serif'
+                  }}>
+                    {optimizationBudget ? 
+                      `This budget can establish approximately ${Math.floor(parseFloat(optimizationBudget) / 300000)} food banks` :
+                      'Enter a budget to see estimated coverage'
+                    }
+                  </p>
+                )}
+              </div>
             </div>
             
-            <div style={{
-              display: 'flex',
-              gap: '12px',
-              justifyContent: 'flex-end'
-            }}>
-              <button
-                onClick={() => {
-                  setOptimizationBudget('');
+            <button
+              onClick={() => {
+                const budget = parseFloat(optimizationBudget);
+                if (!isNaN(budget) && budget >= 1000000) {
                   setShowBudgetInput(false);
-                }}
-                style={{
-                  padding: '12px 24px',
-                  backgroundColor: 'white',
-                  color: '#7f8c8d',
-                  border: '2px solid #e8eaed',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  fontFamily: '"Funnel Display", system-ui, sans-serif'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f8f9fc';
-                  e.currentTarget.style.borderColor = '#c3d9ff';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.borderColor = '#e8eaed';
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const budget = parseFloat(optimizationBudget);
-                  if (!isNaN(budget) && budget >= 1000000) {
-                    setShowBudgetInput(false);
-                    setShowOptimization(true);
-                    startOptimization();
-                  }
-                }}
-                disabled={!optimizationBudget || parseFloat(optimizationBudget) < 1000000}
-                style={{
-                  padding: '12px 32px',
-                  backgroundColor: (!optimizationBudget || parseFloat(optimizationBudget) < 1000000) ? '#95a5a6' : '#74b9ff',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: (!optimizationBudget || parseFloat(optimizationBudget) < 1000000) ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease',
-                  fontFamily: '"Funnel Display", system-ui, sans-serif'
-                }}
-                onMouseEnter={(e) => {
-                  if (optimizationBudget && parseFloat(optimizationBudget) >= 1000000) {
-                    e.currentTarget.style.backgroundColor = '#0984e3';
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(116, 185, 255, 0.3)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (optimizationBudget && parseFloat(optimizationBudget) >= 1000000) {
-                    e.currentTarget.style.backgroundColor = '#74b9ff';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }
-                }}
-              >
-                Start Optimization
-              </button>
-            </div>
+                  setShowOptimization(true);
+                  startOptimization();
+                }
+              }}
+              disabled={!optimizationBudget || parseFloat(optimizationBudget) < 1000000}
+              style={{
+                width: '100%',
+                padding: '16px 32px',
+                backgroundColor: (!optimizationBudget || parseFloat(optimizationBudget) < 1000000) ? '#e5e7eb' : '#000',
+                color: (!optimizationBudget || parseFloat(optimizationBudget) < 1000000) ? '#9ca3af' : '#fff',
+                border: 'none',
+                borderRadius: '12px',
+                fontSize: '17px',
+                fontWeight: '700',
+                cursor: (!optimizationBudget || parseFloat(optimizationBudget) < 1000000) ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+                fontFamily: '"Funnel Display", system-ui, sans-serif'
+              }}
+              onMouseEnter={(e) => {
+                if (optimizationBudget && parseFloat(optimizationBudget) >= 1000000) {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(0, 0, 0, 0.2)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (optimizationBudget && parseFloat(optimizationBudget) >= 1000000) {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = 'none';
+                }
+              }}
+            >
+              {optimizationBudget && parseFloat(optimizationBudget) >= 1000000 ? 
+                'Start Optimization' : 
+                'Enter Valid Budget'
+              }
+            </button>
+            
+            <p style={{
+              fontSize: '12px',
+              color: '#9ca3af',
+              textAlign: 'center',
+              marginTop: '16px',
+              fontFamily: '"Funnel Display", system-ui, sans-serif'
+            }}>
+              Press Enter to continue • Escape to cancel
+            </p>
           </div>
         </div>
       )}
@@ -950,7 +1081,7 @@ export default function Home() {
                   boxShadow: '0 2px 4px rgba(0, 0, 0, 0.04)'
                 }}>
                   <div style={{ fontSize: '14px', fontWeight: '600', color: '#2c3e50', marginBottom: '12px', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                    🎯 Domain Radius
+                    Domain Radius
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                     <span style={{ fontSize: '14px', color: '#7f8c8d', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
@@ -1011,7 +1142,7 @@ export default function Home() {
                   boxShadow: '0 2px 4px rgba(0, 0, 0, 0.04)'
                 }}>
                   <div style={{ fontSize: '14px', fontWeight: '600', color: '#2c3e50', marginBottom: '16px', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                    📍 Selected Location
+                    Selected Location
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '14px', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1127,7 +1258,11 @@ export default function Home() {
           </div>
         ) : selectedDomain ? (
           <>
-            <Map blocks={blocks} visualizationMode={visualizationMode} />
+            <Map 
+              blocks={blocks} 
+              visualizationMode={visualizationMode} 
+              foodBanks={optimizationResult?.data?.locations}
+            />
 
             {/* Loading indicator */}
             {loading && (
@@ -1155,11 +1290,13 @@ export default function Home() {
                 result={optimizationResult}
                 isOptimizing={isOptimizing}
                 budget={parseFloat(optimizationBudget)}
+                agentSteps={agentSteps}
                 onClose={() => {
                   setShowOptimization(false);
                   setOptimizationResult(null);
                   setIsOptimizing(false);
                   setOptimizationBudget('');
+                  setAgentSteps([]);
                 }}
               />
             )}

@@ -1,21 +1,17 @@
-import { useState, useEffect } from 'react'
 import Head from 'next/head'
-import Link from 'next/link'
-import { Drumstick, MapPin, Users, TrendingUp, ArrowRight, BarChart3, Globe, Heart } from 'lucide-react'
+import { useRouter } from 'next/router'
+import { ArrowRight } from 'lucide-react'
 
-export default function Home() {
-  const [scrolled, setScrolled] = useState(false)
-
-  useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 20)
-    }
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
+export default function LandingPage() {
+  const router = useRouter()
 
   return (
-    <div style={{ fontFamily: '"Funnel Display", system-ui, -apple-system, sans-serif' }}>
+    <div style={{ 
+      minHeight: '100vh',
+      backgroundColor: '#ffffff',
+      fontFamily: '"Funnel Display", system-ui, -apple-system, sans-serif',
+      position: 'relative'
+    }}>
       <Head>
         <title>banks - Optimizing Food Security Through Data</title>
         <meta name="description" content="Using AI and geospatial analysis to optimize food bank locations and reduce food insecurity" />
@@ -24,477 +20,528 @@ export default function Home() {
         <link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
       </Head>
 
+      {/* Global gradient background */}
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'linear-gradient(180deg, #fff5f0 0%, #fffaf5 25%, #fff8f3 50%, #fef6ee 75%, #fdf4e7 100%)',
+        zIndex: -2
+      }} />
+
       {/* Navigation */}
       <nav style={{
         position: 'fixed',
         top: 0,
         left: 0,
         right: 0,
-        backgroundColor: scrolled ? 'rgba(255, 255, 255, 0.95)' : 'transparent',
-        backdropFilter: scrolled ? 'blur(10px)' : 'none',
-        borderBottom: scrolled ? '1px solid #e8eaed' : 'none',
-        transition: 'all 0.3s ease',
+        backgroundColor: 'rgba(255, 255, 255, 0.85)',
+        backdropFilter: 'blur(10px)',
+        borderBottom: '1px solid rgba(251, 146, 60, 0.1)',
         zIndex: 1000,
         padding: '20px 0'
       }}>
         <div style={{
           maxWidth: '1200px',
           margin: '0 auto',
-          padding: '0 24px',
+          padding: '0 40px',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between'
+          justifyContent: 'space-between',
+          alignItems: 'center'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <Drumstick size={32} style={{ color: '#e67e22' }} />
-            <h1 style={{ 
-              fontSize: '28px', 
-              fontWeight: '700', 
-              margin: 0, 
-              color: scrolled ? '#2c3e50' : 'white'
-            }}>
-              banks
-            </h1>
-          </div>
-          <Link href="/app">
-            <button style={{
-              padding: '12px 24px',
-              backgroundColor: '#74b9ff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '16px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#0984e3'
-              e.currentTarget.style.transform = 'translateY(-2px)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#74b9ff'
-              e.currentTarget.style.transform = 'translateY(0)'
-            }}>
+          <h1 style={{
+            fontSize: '24px',
+            fontWeight: '700',
+            margin: 0,
+            color: '#000',
+            letterSpacing: '-0.02em'
+          }}>
+            banks
+          </h1>
+                      <button
+              onClick={() => router.push('/app')}
+              style={{
+                padding: '12px 24px',
+                background: 'linear-gradient(135deg, #fb923c 0%, #f97316 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '15px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 2px 8px rgba(251, 146, 60, 0.3)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-1px)'
+                e.currentTarget.style.boxShadow = '0 4px 16px rgba(251, 146, 60, 0.4)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)'
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(251, 146, 60, 0.3)'
+              }}
+            >
               Launch App
-              <ArrowRight size={18} />
+              <ArrowRight size={16} />
             </button>
-          </Link>
         </div>
       </nav>
 
       {/* Hero Section */}
       <section style={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        position: 'relative',
-        overflow: 'hidden'
+        padding: '120px 40px 80px',
+        position: 'relative'
       }}>
         <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.05"%3E%3Cpath d="M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-          opacity: 0.1
-        }} />
-        
-        <div style={{
-          maxWidth: '1200px',
+          maxWidth: '900px',
           margin: '0 auto',
-          padding: '0 24px',
-          textAlign: 'center',
-          position: 'relative',
-          zIndex: 1
+          textAlign: 'center'
         }}>
           <h2 style={{
-            fontSize: '64px',
+            fontSize: 'clamp(48px, 8vw, 80px)',
             fontWeight: '800',
-            color: 'white',
-            marginBottom: '24px',
-            lineHeight: 1.1
+            lineHeight: '0.95',
+            letterSpacing: '-0.03em',
+            marginBottom: '32px',
+            color: '#000'
           }}>
-            Optimizing Food Security<br />Through Data
+            Food security
+            <br />
+            <span style={{ 
+              background: 'linear-gradient(135deg, #fb923c 0%, #f97316 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text'
+            }}>optimized by data</span>
           </h2>
+          
           <p style={{
-            fontSize: '24px',
-            color: 'rgba(255, 255, 255, 0.9)',
-            marginBottom: '48px',
-            maxWidth: '800px',
-            margin: '0 auto 48px'
+            fontSize: '20px',
+            lineHeight: '1.6',
+            color: '#444',
+            maxWidth: '600px',
+            margin: '0 auto 48px',
+            fontWeight: '400'
           }}>
-            Using AI-powered geospatial analysis to strategically place food banks
-            where they're needed most, ensuring no one goes hungry.
+            Leveraging Google's Gemini AI agents and geospatial analysis to determine optimal food bank locations, 
+            ensuring help reaches those who need it most efficiently.
           </p>
+
           <div style={{
             display: 'flex',
             gap: '16px',
             justifyContent: 'center',
             flexWrap: 'wrap'
           }}>
-            <Link href="/app">
-              <button style={{
+            <button
+              onClick={() => router.push('/app')}
+              style={{
                 padding: '16px 32px',
-                backgroundColor: 'white',
-                color: '#667eea',
+                background: 'linear-gradient(135deg, #fb923c 0%, #f97316 100%)',
+                color: '#fff',
                 border: 'none',
                 borderRadius: '12px',
-                fontSize: '18px',
-                fontWeight: '700',
+                fontSize: '17px',
+                fontWeight: '600',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)'
+                boxShadow: '0 4px 16px rgba(251, 146, 60, 0.3)'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-3px)'
-                e.currentTarget.style.boxShadow = '0 15px 40px rgba(0, 0, 0, 0.3)'
+                e.currentTarget.style.transform = 'translateY(-2px)'
+                e.currentTarget.style.boxShadow = '0 8px 24px rgba(251, 146, 60, 0.4)'
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'translateY(0)'
-                e.currentTarget.style.boxShadow = '0 10px 30px rgba(0, 0, 0, 0.2)'
-              }}>
-                Get Started
-              </button>
-            </Link>
-            <button style={{
-              padding: '16px 32px',
-              backgroundColor: 'transparent',
-              color: 'white',
-              border: '2px solid white',
-              borderRadius: '12px',
-              fontSize: '18px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
-              e.currentTarget.style.transform = 'translateY(-3px)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent'
-              e.currentTarget.style.transform = 'translateY(0)'
-            }}>
+                e.currentTarget.style.boxShadow = '0 4px 16px rgba(251, 146, 60, 0.3)'
+              }}
+            >
+              Start Optimizing
+            </button>
+            
+            <button
+              onClick={() => document.getElementById('mission')?.scrollIntoView({ behavior: 'smooth' })}
+              style={{
+                padding: '16px 32px',
+                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                color: '#ea580c',
+                border: '2px solid rgba(251, 146, 60, 0.3)',
+                borderRadius: '12px',
+                fontSize: '17px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                backdropFilter: 'blur(10px)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#fff'
+                e.currentTarget.style.borderColor = '#fb923c'
+                e.currentTarget.style.transform = 'translateY(-2px)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.9)'
+                e.currentTarget.style.borderColor = 'rgba(251, 146, 60, 0.3)'
+                e.currentTarget.style.transform = 'translateY(0)'
+              }}
+            >
               Learn More
             </button>
           </div>
         </div>
 
-        {/* Scroll indicator */}
+        {/* Subtle gradient overlay */}
         <div style={{
           position: 'absolute',
-          bottom: '40px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          animation: 'bounce 2s infinite'
-        }}>
-          <div style={{
-            width: '30px',
-            height: '50px',
-            border: '2px solid rgba(255, 255, 255, 0.5)',
-            borderRadius: '25px',
-            position: 'relative'
-          }}>
-            <div style={{
-              width: '4px',
-              height: '10px',
-              backgroundColor: 'white',
-              borderRadius: '2px',
-              position: 'absolute',
-              top: '8px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              animation: 'scroll 2s infinite'
-            }} />
-          </div>
-        </div>
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'radial-gradient(circle at top right, rgba(251, 146, 60, 0.08) 0%, transparent 50%)',
+          pointerEvents: 'none',
+          zIndex: -1
+        }} />
       </section>
 
       {/* Mission Section */}
-      <section style={{
-        padding: '120px 0',
-        backgroundColor: '#f9fafb'
+      <section id="mission" style={{
+        padding: '120px 40px',
+        backgroundColor: 'transparent',
+        position: 'relative'
       }}>
+        {/* Warm gradient background */}
         <div style={{
-          maxWidth: '1200px',
-          margin: '0 auto',
-          padding: '0 24px'
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'linear-gradient(135deg, rgba(254, 215, 170, 0.15) 0%, rgba(251, 146, 60, 0.08) 100%)',
+          zIndex: -1
+        }} />
+
+        <div style={{
+          maxWidth: '1000px',
+          margin: '0 auto'
         }}>
-          <div style={{
-            textAlign: 'center',
-            marginBottom: '80px'
+          <h3 style={{
+            fontSize: '16px',
+            fontWeight: '600',
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            color: '#666',
+            marginBottom: '24px'
           }}>
-            <h3 style={{
-              fontSize: '48px',
-              fontWeight: '700',
-              color: '#2c3e50',
-              marginBottom: '24px'
-            }}>
-              Our Mission
-            </h3>
-            <p style={{
-              fontSize: '20px',
-              color: '#7f8c8d',
-              maxWidth: '800px',
-              margin: '0 auto',
-              lineHeight: 1.6
-            }}>
-              We believe that hunger is a solvable problem. By leveraging cutting-edge AI and 
-              geospatial analysis, we help communities optimize their food distribution networks 
-              to ensure resources reach those who need them most.
-            </p>
-          </div>
+            Our Mission
+          </h3>
+          
+          <h2 style={{
+            fontSize: 'clamp(32px, 5vw, 48px)',
+            fontWeight: '700',
+            lineHeight: '1.2',
+            marginBottom: '48px',
+            color: '#000',
+            maxWidth: '800px'
+          }}>
+            Every community deserves access to food assistance within reach
+          </h2>
 
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-            gap: '40px'
+            gap: '48px'
           }}>
-            <div style={{
-              backgroundColor: 'white',
-              padding: '40px',
-              borderRadius: '16px',
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
-              transition: 'all 0.3s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-5px)'
-              e.currentTarget.style.boxShadow = '0 10px 40px rgba(0, 0, 0, 0.1)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)'
-              e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.05)'
-            }}>
-              <MapPin size={48} style={{ color: '#74b9ff', marginBottom: '20px' }} />
-              <h4 style={{ fontSize: '24px', fontWeight: '600', color: '#2c3e50', marginBottom: '16px' }}>
-                Strategic Placement
+            <div>
+              <h4 style={{
+                fontSize: '24px',
+                fontWeight: '600',
+                marginBottom: '16px',
+                color: '#000'
+              }}>
+                Data-Driven Decisions
               </h4>
-              <p style={{ fontSize: '16px', color: '#7f8c8d', lineHeight: 1.6 }}>
-                Our AI analyzes population density, poverty rates, and transportation access 
-                to identify optimal food bank locations.
+              <p style={{
+                fontSize: '16px',
+                lineHeight: '1.6',
+                color: '#666'
+              }}>
+                We analyze census data, poverty rates, and transportation access 
+                to identify communities with the highest need for food assistance.
               </p>
             </div>
 
-            <div style={{
-              backgroundColor: 'white',
-              padding: '40px',
-              borderRadius: '16px',
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
-              transition: 'all 0.3s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-5px)'
-              e.currentTarget.style.boxShadow = '0 10px 40px rgba(0, 0, 0, 0.1)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)'
-              e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.05)'
-            }}>
-              <BarChart3 size={48} style={{ color: '#e67e22', marginBottom: '20px' }} />
-              <h4 style={{ fontSize: '24px', fontWeight: '600', color: '#2c3e50', marginBottom: '16px' }}>
-                Data-Driven Insights
+            <div>
+              <h4 style={{
+                fontSize: '24px',
+                fontWeight: '600',
+                marginBottom: '16px',
+                color: '#000'
+              }}>
+                Optimal Placement
               </h4>
-              <p style={{ fontSize: '16px', color: '#7f8c8d', lineHeight: 1.6 }}>
-                Real-time analysis of food insecurity scores, SNAP participation, and 
-                demographic data guides our recommendations.
+              <p style={{
+                fontSize: '16px',
+                lineHeight: '1.6',
+                color: '#666'
+              }}>
+                Our AI algorithms determine the best locations for food banks 
+                to maximize coverage and minimize travel distance for those in need.
               </p>
             </div>
 
-            <div style={{
-              backgroundColor: 'white',
-              padding: '40px',
-              borderRadius: '16px',
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
-              transition: 'all 0.3s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-5px)'
-              e.currentTarget.style.boxShadow = '0 10px 40px rgba(0, 0, 0, 0.1)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)'
-              e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.05)'
-            }}>
-              <Heart size={48} style={{ color: '#e74c3c', marginBottom: '20px' }} />
-              <h4 style={{ fontSize: '24px', fontWeight: '600', color: '#2c3e50', marginBottom: '16px' }}>
-                Maximum Impact
+            <div>
+              <h4 style={{
+                fontSize: '24px',
+                fontWeight: '600',
+                marginBottom: '16px',
+                color: '#000'
+              }}>
+                Budget Efficiency
               </h4>
-              <p style={{ fontSize: '16px', color: '#7f8c8d', lineHeight: 1.6 }}>
-                Every dollar counts. Our optimization ensures resources are allocated 
-                efficiently to serve the maximum number of people.
+              <p style={{
+                fontSize: '16px',
+                lineHeight: '1.6',
+                color: '#666'
+              }}>
+                We help organizations make the most of their resources by 
+                optimizing location selection within budget constraints.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Stats Section */}
+      {/* Impact Section */}
       <section style={{
-        padding: '120px 0',
-        background: 'linear-gradient(135deg, #74b9ff 0%, #0984e3 100%)',
-        color: 'white'
+        padding: '120px 40px',
+        backgroundColor: 'transparent',
+        position: 'relative'
       }}>
+        {/* Soft peach gradient */}
         <div style={{
-          maxWidth: '1200px',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'radial-gradient(ellipse at center, rgba(255, 237, 213, 0.3) 0%, transparent 70%)',
+          zIndex: -1
+        }} />
+
+        <div style={{
+          maxWidth: '1000px',
           margin: '0 auto',
-          padding: '0 24px'
+          textAlign: 'center'
         }}>
+          <h2 style={{
+            fontSize: 'clamp(32px, 5vw, 48px)',
+            fontWeight: '700',
+            lineHeight: '1.2',
+            marginBottom: '64px',
+            color: '#000'
+          }}>
+            Making real impact
+          </h2>
+
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-            gap: '60px',
-            textAlign: 'center'
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '48px',
+            marginBottom: '80px'
           }}>
             <div>
-              <h3 style={{ fontSize: '56px', fontWeight: '800', marginBottom: '16px' }}>
-                38M+
-              </h3>
-              <p style={{ fontSize: '20px', opacity: 0.9 }}>
+              <div style={{
+                fontSize: '48px',
+                fontWeight: '800',
+                color: '#000',
+                marginBottom: '8px'
+              }}>
+                42M
+              </div>
+              <p style={{
+                fontSize: '16px',
+                color: '#666'
+              }}>
                 Americans face food insecurity
               </p>
             </div>
+
             <div>
-              <h3 style={{ fontSize: '56px', fontWeight: '800', marginBottom: '16px' }}>
-                $1M
-              </h3>
-              <p style={{ fontSize: '20px', opacity: 0.9 }}>
-                Can serve 15,000+ people monthly
+              <div style={{
+                fontSize: '48px',
+                fontWeight: '800',
+                color: '#000',
+                marginBottom: '8px'
+              }}>
+                13M
+              </div>
+              <p style={{
+                fontSize: '16px',
+                color: '#666'
+              }}>
+                Children affected by hunger
               </p>
             </div>
+
             <div>
-              <h3 style={{ fontSize: '56px', fontWeight: '800', marginBottom: '16px' }}>
-                85%
-              </h3>
-              <p style={{ fontSize: '20px', opacity: 0.9 }}>
-                Coverage improvement possible
+              <div style={{
+                fontSize: '48px',
+                fontWeight: '800',
+                color: '#000',
+                marginBottom: '8px'
+              }}>
+                200+
+              </div>
+              <p style={{
+                fontSize: '16px',
+                color: '#666'
+              }}>
+                Food banks nationwide
               </p>
             </div>
+
             <div>
-              <h3 style={{ fontSize: '56px', fontWeight: '800', marginBottom: '16px' }}>
-                3x
-              </h3>
-              <p style={{ fontSize: '20px', opacity: 0.9 }}>
-                More efficient than traditional planning
+              <div style={{
+                fontSize: '48px',
+                fontWeight: '800',
+                color: '#000',
+                marginBottom: '8px'
+              }}>
+                $149B
+              </div>
+              <p style={{
+                fontSize: '16px',
+                color: '#666'
+              }}>
+                Annual food waste in America
               </p>
             </div>
           </div>
+
+          <p style={{
+            fontSize: '20px',
+            lineHeight: '1.6',
+            color: '#444',
+            maxWidth: '700px',
+            margin: '0 auto'
+          }}>
+            Together, we can ensure that nutritious food is always within reach—
+            no family should have to choose between gas money and groceries.
+          </p>
         </div>
       </section>
 
       {/* CTA Section */}
       <section style={{
-        padding: '120px 0',
-        backgroundColor: 'white'
+        padding: '120px 40px',
+        background: 'linear-gradient(135deg, #ea580c 0%, #dc2626 100%)',
+        color: '#fff',
+        textAlign: 'center',
+        position: 'relative',
+        overflow: 'hidden'
       }}>
+        {/* Animated gradient overlay */}
+        <div style={{
+          position: 'absolute',
+          top: '-50%',
+          left: '-50%',
+          right: '-50%',
+          bottom: '-50%',
+          background: 'radial-gradient(circle at center, rgba(255, 255, 255, 0.1) 0%, transparent 70%)',
+          animation: 'pulse 4s ease-in-out infinite',
+          zIndex: 0
+        }} />
+
         <div style={{
           maxWidth: '800px',
           margin: '0 auto',
-          padding: '0 24px',
-          textAlign: 'center'
+          position: 'relative',
+          zIndex: 1
         }}>
-          <h3 style={{
-            fontSize: '48px',
+          <h2 style={{
+            fontSize: 'clamp(32px, 5vw, 48px)',
             fontWeight: '700',
-            color: '#2c3e50',
+            lineHeight: '1.2',
             marginBottom: '24px'
           }}>
-            Ready to Make a Difference?
-          </h3>
+            Want to see how we can solve food insecurity in your area?
+          </h2>
+          
           <p style={{
             fontSize: '20px',
-            color: '#7f8c8d',
+            lineHeight: '1.6',
             marginBottom: '48px',
-            lineHeight: 1.6
+            opacity: 0.8
           }}>
-            Join us in the fight against hunger. Use our platform to optimize food bank 
-            placement in your community and ensure no one goes without a meal.
+            Try our platform to visualize and optimize food assistance coverage.
+            <br />
+            <span style={{ fontSize: '16px', opacity: 0.7 }}>Currently available for California</span>
           </p>
-          <Link href="/app">
-            <button style={{
-              padding: '20px 48px',
-              backgroundColor: '#74b9ff',
-              color: 'white',
+
+          <button
+            onClick={() => router.push('/app')}
+            style={{
+              padding: '16px 40px',
+              backgroundColor: '#fff',
+              color: '#000',
               border: 'none',
-              borderRadius: '12px',
-              fontSize: '20px',
-              fontWeight: '700',
+              borderRadius: '8px',
+              fontSize: '17px',
+              fontWeight: '600',
               cursor: 'pointer',
               transition: 'all 0.2s ease',
-              boxShadow: '0 10px 30px rgba(116, 185, 255, 0.3)'
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px'
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#0984e3'
-              e.currentTarget.style.transform = 'translateY(-3px)'
-              e.currentTarget.style.boxShadow = '0 15px 40px rgba(116, 185, 255, 0.4)'
+              e.currentTarget.style.transform = 'translateY(-2px)'
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(255, 255, 255, 0.2)'
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#74b9ff'
               e.currentTarget.style.transform = 'translateY(0)'
-              e.currentTarget.style.boxShadow = '0 10px 30px rgba(116, 185, 255, 0.3)'
-            }}>
-              Start Optimizing Now
-            </button>
-          </Link>
+              e.currentTarget.style.boxShadow = 'none'
+            }}
+          >
+            Try It Now
+            <ArrowRight size={18} />
+          </button>
         </div>
       </section>
 
       {/* Footer */}
       <footer style={{
-        padding: '40px 0',
-        backgroundColor: '#2c3e50',
-        color: 'white',
-        textAlign: 'center'
+        padding: '40px',
+        borderTop: '1px solid rgba(251, 146, 60, 0.2)',
+        textAlign: 'center',
+        backgroundColor: 'rgba(255, 251, 245, 0.5)'
       }}>
-        <div style={{
-          maxWidth: '1200px',
-          margin: '0 auto',
-          padding: '0 24px'
+        <p style={{
+          fontSize: '14px',
+          color: '#92400e',
+          margin: 0
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '16px' }}>
-            <Drumstick size={24} style={{ color: '#e67e22' }} />
-            <span style={{ fontSize: '20px', fontWeight: '600' }}>banks</span>
-          </div>
-          <p style={{ opacity: 0.8 }}>
-            © 2024 banks. Optimizing food security through data.
-          </p>
-        </div>
+          © 2025 banks. All food reserved. 🥫
+        </p>
       </footer>
 
       <style jsx>{`
-        @keyframes bounce {
-          0%, 20%, 50%, 80%, 100% {
-            transform: translateX(-50%) translateY(0);
+        @keyframes pulse {
+          0%, 100% {
+            transform: scale(1);
+            opacity: 0.1;
           }
-          40% {
-            transform: translateX(-50%) translateY(-10px);
-          }
-          60% {
-            transform: translateX(-50%) translateY(-5px);
-          }
-        }
-
-        @keyframes scroll {
-          0% {
-            opacity: 0;
-            transform: translateX(-50%) translateY(0);
-          }
-          40% {
-            opacity: 1;
-          }
-          80% {
-            opacity: 0;
-            transform: translateX(-50%) translateY(20px);
-          }
-          100% {
-            opacity: 0;
-            transform: translateX(-50%) translateY(20px);
+          50% {
+            transform: scale(1.1);
+            opacity: 0.15;
           }
         }
       `}</style>

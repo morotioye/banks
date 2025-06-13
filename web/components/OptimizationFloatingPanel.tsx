@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MapPin, DollarSign, Users, TrendingUp, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { MapPin, DollarSign, Users, TrendingUp, X, ChevronLeft, ChevronRight, Bot, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 
 interface OptimizationLocation {
   geoid: string;
@@ -25,20 +25,33 @@ interface OptimizationResult {
   error?: string;
 }
 
+interface AgentStep {
+  agent: string;
+  step: string;
+  status: 'starting' | 'in_progress' | 'completed' | 'error';
+  message: string;
+  input?: any;
+  output?: any;
+  timestamp: Date;
+}
+
 interface OptimizationFloatingPanelProps {
   result: OptimizationResult | null;
   isOptimizing: boolean;
   onClose: () => void;
   budget: number;
+  agentSteps?: AgentStep[];
 }
 
 export default function OptimizationFloatingPanel({ 
   result, 
   isOptimizing, 
   onClose,
-  budget 
+  budget,
+  agentSteps = []
 }: OptimizationFloatingPanelProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [showAgentDetails, setShowAgentDetails] = useState<number | null>(null);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -177,20 +190,211 @@ export default function OptimizationFloatingPanel({
           <div style={{
             display: 'flex',
             flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
             height: '100%',
             gap: '16px'
           }}>
+            {/* Agent Progress Header */}
             <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '50%',
-              border: '3px solid #e5e7eb',
-              borderTopColor: '#74b9ff',
-              animation: 'spin 1s linear infinite'
-            }} />
-            <p style={{ color: '#6b7280', fontSize: '16px' }}>Optimizing locations...</p>
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              paddingBottom: '16px',
+              borderBottom: '1px solid #e5e7eb'
+            }}>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                backgroundColor: '#dbeafe',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Bot size={18} style={{ color: '#3b82f6' }} />
+              </div>
+              <div>
+                <h3 style={{
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#111827',
+                  margin: 0
+                }}>
+                  AI Agents Working
+                </h3>
+                <p style={{
+                  fontSize: '12px',
+                  color: '#6b7280',
+                  margin: '2px 0 0 0'
+                }}>
+                  Optimizing food bank locations...
+                </p>
+              </div>
+            </div>
+
+            {/* Agent Steps */}
+            <div style={{
+              flex: 1,
+              overflow: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              {agentSteps.map((step, index) => (
+                <div
+                  key={index}
+                  style={{
+                    backgroundColor: '#f9fafb',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    border: '1px solid #e5e7eb',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onClick={() => setShowAgentDetails(showAgentDetails === index ? null : index)}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f3f4f6';
+                    e.currentTarget.style.borderColor = '#d1d5db';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f9fafb';
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'start', gap: '12px' }}>
+                    {/* Status Icon */}
+                    <div style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: 
+                        step.status === 'completed' ? '#d1fae5' :
+                        step.status === 'error' ? '#fee2e2' :
+                        step.status === 'in_progress' ? '#dbeafe' :
+                        '#f3f4f6'
+                    }}>
+                      {step.status === 'completed' ? (
+                        <CheckCircle size={14} style={{ color: '#059669' }} />
+                      ) : step.status === 'error' ? (
+                        <AlertCircle size={14} style={{ color: '#dc2626' }} />
+                      ) : step.status === 'in_progress' ? (
+                        <div style={{
+                          width: '12px',
+                          height: '12px',
+                          borderRadius: '50%',
+                          border: '2px solid #3b82f6',
+                          borderTopColor: 'transparent',
+                          animation: 'spin 1s linear infinite'
+                        }} />
+                      ) : (
+                        <Clock size={14} style={{ color: '#6b7280' }} />
+                      )}
+                    </div>
+
+                    {/* Content */}
+                    <div style={{ flex: 1 }}>
+                      <div style={{
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#111827',
+                        marginBottom: '2px'
+                      }}>
+                        {step.agent}
+                      </div>
+                      <div style={{
+                        fontSize: '13px',
+                        color: '#6b7280',
+                        lineHeight: '1.4'
+                      }}>
+                        {step.message}
+                      </div>
+
+                      {/* Expandable Details */}
+                      {showAgentDetails === index && (
+                        <div style={{
+                          marginTop: '12px',
+                          paddingTop: '12px',
+                          borderTop: '1px solid #e5e7eb'
+                        }}>
+                          {step.input && (
+                            <div style={{ marginBottom: '8px' }}>
+                              <div style={{
+                                fontSize: '12px',
+                                fontWeight: '600',
+                                color: '#374151',
+                                marginBottom: '4px'
+                              }}>
+                                Input:
+                              </div>
+                              <pre style={{
+                                fontSize: '11px',
+                                color: '#6b7280',
+                                backgroundColor: '#f3f4f6',
+                                padding: '8px',
+                                borderRadius: '4px',
+                                overflow: 'auto',
+                                margin: 0,
+                                fontFamily: 'monospace'
+                              }}>
+                                {JSON.stringify(step.input, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+                          {step.output && (
+                            <div>
+                              <div style={{
+                                fontSize: '12px',
+                                fontWeight: '600',
+                                color: '#374151',
+                                marginBottom: '4px'
+                              }}>
+                                Output:
+                              </div>
+                              <pre style={{
+                                fontSize: '11px',
+                                color: '#6b7280',
+                                backgroundColor: '#f3f4f6',
+                                padding: '8px',
+                                borderRadius: '4px',
+                                overflow: 'auto',
+                                margin: 0,
+                                fontFamily: 'monospace'
+                              }}>
+                                {JSON.stringify(step.output, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {/* Loading indicator if no steps yet */}
+              {agentSteps.length === 0 && (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '200px',
+                  gap: '16px'
+                }}>
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '50%',
+                    border: '3px solid #e5e7eb',
+                    borderTopColor: '#74b9ff',
+                    animation: 'spin 1s linear infinite'
+                  }} />
+                  <p style={{ color: '#6b7280', fontSize: '14px' }}>Initializing agents...</p>
+                </div>
+              )}
+            </div>
           </div>
         ) : result?.data ? (
           <>
@@ -202,78 +406,89 @@ export default function OptimizationFloatingPanel({
               marginBottom: '20px'
             }}>
               <p style={{ fontSize: '14px', color: '#0369a1', margin: '0 0 4px 0' }}>
-                Optimization Budget
+                Budget Utilization
               </p>
               <p style={{ fontSize: '24px', fontWeight: '700', color: '#0284c7', margin: 0 }}>
-                {formatCurrency(budget)}
+                {formatCurrency(result.data.total_budget_used)} / {formatCurrency(budget)}
               </p>
               <p style={{ fontSize: '12px', color: '#0369a1', margin: '8px 0 0 0' }}>
-                {formatCurrency(result.data.total_budget_used)} utilized ({((result.data.total_budget_used / budget) * 100).toFixed(1)}%)
+                {((result.data.total_budget_used / budget) * 100).toFixed(1)}% utilized
               </p>
             </div>
 
-            {/* Summary Cards */}
+            {/* Key Metrics Grid */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
+              gridTemplateColumns: '1fr',
               gap: '12px',
               marginBottom: '20px'
             }}>
+              {/* Food Banks Count */}
               <div style={{
                 backgroundColor: '#f0fdf4',
                 borderRadius: '12px',
-                padding: '16px'
+                padding: '16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
               }}>
-                <MapPin size={20} style={{ color: '#16a34a', marginBottom: '8px' }} />
-                <p style={{ fontSize: '24px', fontWeight: '700', color: '#15803d', margin: 0 }}>
-                  {result.data.locations.length}
-                </p>
-                <p style={{ fontSize: '12px', color: '#16a34a', margin: '4px 0 0 0' }}>
-                  Food Banks
-                </p>
+                <div>
+                  <p style={{ fontSize: '12px', color: '#16a34a', margin: '0 0 4px 0' }}>
+                    Food Banks
+                  </p>
+                  <p style={{ fontSize: '28px', fontWeight: '700', color: '#15803d', margin: 0 }}>
+                    {result.data.locations.length}
+                  </p>
+                </div>
+                <MapPin size={24} style={{ color: '#16a34a', opacity: 0.5 }} />
               </div>
 
+              {/* People Served */}
               <div style={{
                 backgroundColor: '#fef3c7',
                 borderRadius: '12px',
                 padding: '16px'
               }}>
-                <Users size={20} style={{ color: '#d97706', marginBottom: '8px' }} />
-                <p style={{ fontSize: '24px', fontWeight: '700', color: '#b45309', margin: 0 }}>
+                <p style={{ fontSize: '12px', color: '#d97706', margin: '0 0 4px 0' }}>
+                  Monthly Reach
+                </p>
+                <p style={{ fontSize: '28px', fontWeight: '700', color: '#b45309', margin: 0 }}>
                   {formatNumber(result.data.total_people_served)}
                 </p>
-                <p style={{ fontSize: '12px', color: '#d97706', margin: '4px 0 0 0' }}>
-                  People Served
+                <p style={{ fontSize: '11px', color: '#d97706', margin: '4px 0 0 0' }}>
+                  people served per month
                 </p>
               </div>
-            </div>
 
-            {/* Coverage Metric */}
-            <div style={{
-              backgroundColor: '#f3f4f6',
-              borderRadius: '12px',
-              padding: '16px',
-              marginBottom: '20px'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '14px', color: '#6b7280' }}>Coverage</span>
-                <span style={{ fontSize: '18px', fontWeight: '600', color: '#111827' }}>
-                  {result.data.coverage_percentage.toFixed(1)}%
-                </span>
-              </div>
+              {/* Coverage */}
               <div style={{
-                width: '100%',
-                height: '8px',
-                backgroundColor: '#e5e7eb',
-                borderRadius: '4px',
-                overflow: 'hidden'
+                backgroundColor: '#f3f4f6',
+                borderRadius: '12px',
+                padding: '16px'
               }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#6b7280' }}>Area Coverage</span>
+                  <span style={{ fontSize: '18px', fontWeight: '600', color: '#111827' }}>
+                    {result.data.coverage_percentage.toFixed(1)}%
+                  </span>
+                </div>
                 <div style={{
-                  width: `${result.data.coverage_percentage}%`,
-                  height: '100%',
-                  backgroundColor: '#74b9ff',
-                  transition: 'width 0.5s ease'
-                }} />
+                  width: '100%',
+                  height: '8px',
+                  backgroundColor: '#e5e7eb',
+                  borderRadius: '4px',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{
+                    width: `${result.data.coverage_percentage}%`,
+                    height: '100%',
+                    backgroundColor: '#74b9ff',
+                    transition: 'width 0.5s ease'
+                  }} />
+                </div>
+                <p style={{ fontSize: '11px', color: '#6b7280', margin: '8px 0 0 0' }}>
+                  of high-need areas covered
+                </p>
               </div>
             </div>
 
