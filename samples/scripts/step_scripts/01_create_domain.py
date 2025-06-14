@@ -178,6 +178,7 @@ def create_domain(domain_name, circles):
         {
             '$set': {
                 'collection_name': collection_name,
+                'name': domain_name,
                 'domain_name': domain_name,
                 'circles': [{'lat': lat, 'lon': lon, 'radius_miles': radius} for lat, lon, radius in circles],
                 'center': {'coordinates': [avg_lon, avg_lat]},

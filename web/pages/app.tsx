@@ -13,12 +13,29 @@ interface Domain {
   _id?: string
   collection_name: string
   name: string
+  domain_name?: string  // Alternative name field
   center?: {
     coordinates: [number, number]
   }
   radius_miles?: number
   total_blocks?: number
   created_at?: string
+  stats?: {
+    total_blocks: number
+    total_population?: number
+    blocks_with_poverty_data?: number
+    blocks_with_snap_data?: number
+    blocks_with_scores?: number
+    avg_food_insecurity_score?: number
+    min_food_insecurity_score?: number
+    max_food_insecurity_score?: number
+    total_need?: number
+  }
+  circles?: Array<{
+    lat: number
+    lon: number
+    radius_miles: number
+  }>
 }
 
 // Visualization mode configurations
@@ -85,6 +102,7 @@ export default function Home() {
   const [selectedDomain, setSelectedDomain] = useState<string>('')
   const [blocks, setBlocks] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingDomains, setLoadingDomains] = useState(true)
   const [visualizationMode, setVisualizationMode] = useState<string>('food_insecurity_score')
   const [creating, setCreating] = useState(false)
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
@@ -141,12 +159,16 @@ export default function Home() {
 
   // Fetch domains
   const fetchDomains = async () => {
+    setLoadingDomains(true)
     try {
       const response = await fetch('/api/domains')
       const data = await response.json()
+      console.log('Fetched domains data:', data.domains)
       setDomains(data.domains || [])
     } catch (error) {
       console.error('Error fetching domains:', error)
+    } finally {
+      setLoadingDomains(false)
     }
   }
 
@@ -640,11 +662,24 @@ export default function Home() {
               Recent Domains
             </h2>
             <p style={{ fontSize: '12px', color: '#7f8c8d', margin: '4px 0 0 0', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-              Showing 3 most recent
+              {loadingDomains ? 'Loading...' : domains.length === 0 ? 'No domains yet' : `Showing ${Math.min(3, domains.length)} most recent`}
             </p>
           </div>
           
-          {domains.length === 0 ? (
+          {loadingDomains ? (
+            <div style={{ 
+              textAlign: 'center', 
+              marginTop: '48px',
+              padding: '32px 16px',
+              backgroundColor: 'white',
+              borderRadius: '8px',
+              border: '1px solid hsl(25, 5%, 90%)'
+            }}>
+              <p style={{ color: '#95a5a6', fontSize: '14px', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
+                Loading domains...
+              </p>
+            </div>
+          ) : domains.length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ 
                 textAlign: 'center', 
@@ -765,20 +800,43 @@ export default function Home() {
                     onClick={() => setSelectedDomain(domain.collection_name)}
                   >
                     <h3 style={{ fontSize: '15px', fontWeight: '600', margin: 0, color: '#2c3e50', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                      {domain.name}
+                      {domain.name || domain.domain_name || domain.collection_name.replace(/^d_/, '').replace(/_/g, ' ')}
                     </h3>
-                    {domain.center && domain.center.coordinates ? (
+                    {(domain.center && domain.center.coordinates) || domain.circles ? (
                       <>
                         <p style={{ fontSize: '12px', color: '#7f8c8d', margin: '6px 0 2px 0', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                          {domain.center.coordinates[1].toFixed(4)}, {domain.center.coordinates[0].toFixed(4)}
+                          {domain.center && domain.center.coordinates 
+                            ? `${domain.center.coordinates[1].toFixed(4)}, ${domain.center.coordinates[0].toFixed(4)}`
+                            : domain.circles && domain.circles.length > 0
+                            ? `${domain.circles[0].lat.toFixed(4)}, ${domain.circles[0].lon.toFixed(4)}`
+                            : 'Location not available'
+                          }
                         </p>
                         <p style={{ fontSize: '12px', color: '#95a5a6', margin: '2px 0 0 0', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                          {domain.radius_miles} mile radius • {domain.total_blocks} blocks
+                          {domain.circles && domain.circles.length > 1 
+                            ? `${domain.circles.length} coverage areas`
+                            : domain.radius_miles 
+                            ? `${domain.radius_miles.toFixed(1)} mile radius` 
+                            : domain.circles && domain.circles.length === 1
+                            ? `${domain.circles[0].radius_miles.toFixed(1)} mile radius`
+                            : ''
+                          }
+                          {domain.stats?.total_blocks 
+                            ? ` • ${domain.stats.total_blocks.toLocaleString()} blocks` 
+                            : domain.total_blocks
+                            ? ` • ${domain.total_blocks.toLocaleString()} blocks`
+                            : ''
+                          }
                         </p>
+                        {domain.created_at && (
+                          <p style={{ fontSize: '11px', color: '#bdc3c7', margin: '4px 0 0 0', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
+                            Created {new Date(domain.created_at).toLocaleDateString()}
+                          </p>
+                        )}
                       </>
                     ) : (
                       <p style={{ fontSize: '12px', color: '#7f8c8d', margin: '6px 0 0 0', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                        {domain.collection_name.replace(/^d_/, '')}
+                        No location data available
                       </p>
                     )}
                   </div>
