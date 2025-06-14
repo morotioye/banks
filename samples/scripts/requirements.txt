@@ -22,6 +22,10 @@ aiohttp>=3.8.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
 
+# Visualization (for agent testing)
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
 # Utilities
 click>=8.1.0
 tqdm>=4.65.0

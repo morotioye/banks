@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 25 5% 95%; /* Stone 50 - very light stone background */
+    --foreground: 140 35% 20%; /* Dark forest green text */
+    --card: 25 5% 98%;
+    --card-foreground: 140 35% 20%;
+    --popover: 25 5% 98%;
+    --popover-foreground: 140 35% 20%;
+    --primary: 140 30% 25%; /* Dark pastel forest green */
+    --primary-foreground: 25 5% 95%; /* Light stone */
+    --secondary: 25 5% 90%; /* Stone 100 */
+    --secondary-foreground: 140 30% 25%;
+    --muted: 25 5% 85%;
+    --muted-foreground: 140 20% 35%;
+    --accent: 140 25% 35%; /* Lighter forest green */
+    --accent-foreground: 25 5% 95%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 25 5% 80%; /* Stone 200 */
+    --input: 25 5% 90%;
+    --ring: 140 30% 25%;
+    --radius: 0.75rem;
+    --chart-1: 140 30% 25%;
+    --chart-2: 140 25% 35%;
+    --chart-3: 25 5% 45%;
+    --chart-4: 140 20% 40%;
+    --chart-5: 25 5% 60%;
+  }
+  .dark {
+    --background: 140 35% 15%; /* Very dark forest green */
+    --foreground: 25 5% 90%; /* Light stone */
+    --card: 140 30% 18%;
+    --card-foreground: 25 5% 90%;
+    --popover: 140 30% 18%;
+    --popover-foreground: 25 5% 90%;
+    --primary: 140 20% 40%; /* Pastel forest green */
+    --primary-foreground: 140 35% 15%;
+    --secondary: 25 5% 25%; /* Dark stone */
+    --secondary-foreground: 25 5% 90%;
+    --muted: 25 5% 20%;
+    --muted-foreground: 25 5% 70%;
+    --accent: 140 25% 35%;
+    --accent-foreground: 25 5% 90%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 60 9.1% 97.8%;
+    --border: 25 5% 25%;
+    --input: 25 5% 25%;
+    --ring: 140 20% 40%;
+    --chart-1: 140 30% 25%;
+    --chart-2: 140 25% 35%;
+    --chart-3: 25 5% 45%;
+    --chart-4: 140 20% 40%;
+    --chart-5: 25 5% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Funnel Display", system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Custom utilities */
+@layer utilities {
+  .bg-forest-gradient {
+    background: linear-gradient(135deg, hsl(140, 30%, 25%) 0%, hsl(140, 25%, 35%) 100%);
+  }
+  
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-forest-green to-forest-green-light;
+  }
+}
+
+/* Custom forest green and stone color utilities */
+.bg-forest-green {
+  background-color: hsl(140, 30%, 25%);
+}
+
+.bg-forest-green-pastel {
+  background-color: hsl(140, 20%, 40%);
+}
+
+.text-forest-green {
+  color: hsl(140, 30%, 25%);
+}
+
+.border-forest-green {
+  border-color: hsl(140, 30%, 25%);
+} 

@@ -39,15 +39,13 @@ def sanitize_domain_name(name):
     sanitized = sanitized.strip('_')
     return sanitized
 
-def create_domain(domain_name, center_lat, center_lon, radius_miles):
+def create_domain(domain_name, circles):
     """
-    Create a domain collection by copying census blocks within radius.
+    Create a domain collection by copying census blocks within multiple circles.
     
     Args:
         domain_name: Name for the domain (will be prefixed with 'd_')
-        center_lat: Latitude of center point
-        center_lon: Longitude of center point
-        radius_miles: Radius in miles
+        circles: List of tuples (lat, lon, radius_miles)
     """
     # Connect to MongoDB
     client = MongoClient(MONGO_URI)
@@ -58,8 +56,9 @@ def create_domain(domain_name, center_lat, center_lon, radius_miles):
     collection_name = f"d_{sanitized_name}"
     
     logging.info(f"Creating domain collection: {collection_name}")
-    logging.info(f"Center: ({center_lat}, {center_lon})")
-    logging.info(f"Radius: {radius_miles} miles")
+    logging.info(f"Number of circles: {len(circles)}")
+    for i, (lat, lon, radius) in enumerate(circles):
+        logging.info(f"Circle {i+1}: Center ({lat}, {lon}), Radius {radius} miles")
     
     # Check if domain already exists
     if collection_name in db.list_collection_names():
@@ -69,27 +68,36 @@ def create_domain(domain_name, center_lat, center_lon, radius_miles):
     # Get source collection
     source_collection = db['census_blocks']
     
-    # Find blocks within radius using geospatial query
-    radius_meters = radius_miles * 1609.34
+    # Find blocks within any of the circles
+    all_blocks = {}  # Use dict to avoid duplicates
     
-    blocks_cursor = source_collection.find({
-        "geometry": {
-            "$nearSphere": {
-                "$geometry": {
-                    "type": "Point",
-                    "coordinates": [center_lon, center_lat]
-                },
-                "$maxDistance": radius_meters
+    for lat, lon, radius in circles:
+        radius_meters = radius * 1609.34
+        
+        blocks_cursor = source_collection.find({
+            "geometry": {
+                "$nearSphere": {
+                    "$geometry": {
+                        "type": "Point",
+                        "coordinates": [lon, lat]
+                    },
+                    "$maxDistance": radius_meters
+                }
             }
-        }
-    })
+        })
+        
+        # Add blocks to our collection (using geoid as key to avoid duplicates)
+        for block in blocks_cursor:
+            geoid = block.get('properties', {}).get('geoid')
+            if geoid:
+                all_blocks[geoid] = block
     
     # Copy blocks to domain collection
     domain_collection = db[collection_name]
     blocks_copied = 0
     total_population = 0
     
-    blocks_list = list(blocks_cursor)
+    blocks_list = list(all_blocks.values())
     
     if not blocks_list:
         logging.error("No blocks found within the specified radius!")
@@ -104,9 +112,7 @@ def create_domain(domain_name, center_lat, center_lon, radius_miles):
         for block in batch:
             block['domain_metadata'] = {
                 'domain_name': domain_name,
-                'center_lat': center_lat,
-                'center_lon': center_lon,
-                'radius_miles': radius_miles,
+                'circles': [{'lat': lat, 'lon': lon, 'radius_miles': radius} for lat, lon, radius in circles],
                 'added_at': datetime.utcnow()
             }
             # Remove _id to avoid conflicts
@@ -161,15 +167,22 @@ def create_domain(domain_name, center_lat, center_lon, radius_miles):
     
     # Create domain metadata document
     metadata_collection = db['domain_metadata']
+    
+    # Calculate center point as average of all circles
+    avg_lat = sum(lat for lat, lon, radius in circles) / len(circles)
+    avg_lon = sum(lon for lat, lon, radius in circles) / len(circles)
+    avg_radius = sum(radius for lat, lon, radius in circles) / len(circles)
+    
     metadata_collection.update_one(
         {'collection_name': collection_name},
         {
             '$set': {
                 'collection_name': collection_name,
+                'name': domain_name,
                 'domain_name': domain_name,
-                'center_lat': center_lat,
-                'center_lon': center_lon,
-                'radius_miles': radius_miles,
+                'circles': [{'lat': lat, 'lon': lon, 'radius_miles': radius} for lat, lon, radius in circles],
+                'center': {'coordinates': [avg_lon, avg_lat]},
+                'radius_miles': avg_radius,  # Keep for backward compatibility
                 'created_at': datetime.utcnow(),
                 'stats': stats
             }
@@ -201,21 +214,28 @@ def main():
     parser = argparse.ArgumentParser(description='Create a domain collection from census blocks')
     parser.add_argument('--name', type=str, default='downtown_la',
                        help='Name for the domain (will be prefixed with d_)')
-    parser.add_argument('--lat', type=float, default=34.0522,
-                       help='Latitude of center point')
-    parser.add_argument('--lon', type=float, default=-118.2437,
-                       help='Longitude of center point')
-    parser.add_argument('--radius', type=float, default=2.0,
-                       help='Radius in miles')
+    parser.add_argument('--lat', type=float, action='append',
+                       help='Latitude of center point (can be specified multiple times)')
+    parser.add_argument('--lon', type=float, action='append',
+                       help='Longitude of center point (can be specified multiple times)')
+    parser.add_argument('--radius', type=float, action='append',
+                       help='Radius in miles (can be specified multiple times)')
     
     args = parser.parse_args()
+    
+    # Validate arguments
+    if not args.lat or not args.lon or not args.radius:
+        # Use defaults if no arguments provided
+        circles = [(34.0522, -118.2437, 2.0)]
+    else:
+        if len(args.lat) != len(args.lon) or len(args.lat) != len(args.radius):
+            parser.error("Must provide equal number of --lat, --lon, and --radius arguments")
+        circles = list(zip(args.lat, args.lon, args.radius))
     
     # Create domain
     collection_name = create_domain(
         domain_name=args.name,
-        center_lat=args.lat,
-        center_lon=args.lon,
-        radius_miles=args.radius
+        circles=circles
     )
     
     if collection_name:

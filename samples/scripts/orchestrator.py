@@ -129,12 +129,12 @@ def main():
     # Arguments for domain creation (step 1)
     parser.add_argument('--name', type=str, default='downtown_la',
                        help='Name for the domain (will be prefixed with d_)')
-    parser.add_argument('--lat', type=float, default=34.0522,
-                       help='Latitude of center point')
-    parser.add_argument('--lon', type=float, default=-118.2437,
-                       help='Longitude of center point')
-    parser.add_argument('--radius', type=float, default=2.0,
-                       help='Radius in miles')
+    parser.add_argument('--lat', type=float, action='append',
+                       help='Latitude of center point (can be specified multiple times)')
+    parser.add_argument('--lon', type=float, action='append',
+                       help='Longitude of center point (can be specified multiple times)')
+    parser.add_argument('--radius', type=float, action='append',
+                       help='Radius in miles (can be specified multiple times)')
     
     # Optional: specify existing collection to skip step 1
     parser.add_argument('--collection', type=str, default=None,
@@ -183,12 +183,23 @@ def main():
             if collection_name:
                 print("Skipping - using existing collection")
                 continue
-            step_args = [
-                '--name', args.name,
-                '--lat', str(args.lat),
-                '--lon', str(args.lon),
-                '--radius', str(args.radius)
-            ]
+            
+            # Validate that we have matching lat/lon/radius lists
+            if not args.lat or not args.lon or not args.radius:
+                print("✗ Missing lat/lon/radius arguments")
+                all_success = False
+                break
+            
+            if len(args.lat) != len(args.lon) or len(args.lat) != len(args.radius):
+                print("✗ Mismatched number of lat/lon/radius arguments")
+                all_success = False
+                break
+            
+            step_args = ['--name', args.name]
+            
+            # Add each circle
+            for lat, lon, radius in zip(args.lat, args.lon, args.radius):
+                step_args.extend(['--lat', str(lat), '--lon', str(lon), '--radius', str(radius)])
         else:
             # Other steps need the collection name
             if not collection_name:
