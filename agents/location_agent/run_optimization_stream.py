@@ -27,7 +27,7 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
     
     def __init__(self):
         super().__init__()
-        self.min_step_duration = 2.0  # Minimum 2 seconds per step
+        self.min_step_duration = 0.5  # Reduced from 2.0 to 0.5 seconds per step
     
     async def optimize_locations(self, request: OptimizationRequest) -> Dict[str, Any]:
         """

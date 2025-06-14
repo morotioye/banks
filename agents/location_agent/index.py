@@ -13,6 +13,8 @@ from datetime import datetime
 import numpy as np
 from pymongo import MongoClient
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+import multiprocessing
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -30,8 +32,8 @@ class OptimizationRequest:
     """Request parameters for optimization"""
     domain: str
     budget: float
-    max_locations: int = 10
-    min_distance_between_banks: float = 0.5  # miles
+    max_locations: int = 1000  # High default to not artificially limit
+    min_distance_between_banks: float = 0.3  # miles - allow closer spacing for urban areas
 
 @dataclass
 class Cell:
@@ -167,44 +169,42 @@ class DataAnalysisAgent:
             return {'cells': [], 'statistics': {}}
         
         collection = self.db[collection_name]
-        blocks = list(collection.find({}))
+        
+        # Use batch processing for MongoDB queries
+        # Fetch all blocks at once with projection to reduce data transfer
+        projection = {
+            'properties': 1,
+            'geometry.coordinates': 1,
+            '_id': 0
+        }
+        
+        blocks = list(collection.find({}, projection))
+        logger.info(f"Fetched {len(blocks)} blocks from database")
+        
+        # Process blocks in parallel
+        num_workers = min(multiprocessing.cpu_count(), 8)
+        chunk_size = max(1, len(blocks) // num_workers)
+        block_chunks = [blocks[i:i + chunk_size] for i in range(0, len(blocks), chunk_size)]
         
         cells = []
-        total_population = 0
-        total_need = 0
         
-        for block in blocks:
-            props = block['properties']
+        # Process blocks in parallel using threads (good for I/O bound operations)
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            future_to_chunk = {
+                executor.submit(self._process_blocks_chunk, chunk): chunk 
+                for chunk in block_chunks
+            }
             
-            # Extract centroid from geometry
-            coords = block['geometry']['coordinates'][0]
-            lons = [c[0] for c in coords]
-            lats = [c[1] for c in coords]
-            centroid_lon = sum(lons) / len(lons)
-            centroid_lat = sum(lats) / len(lats)
-            
-            # Calculate need if not present
-            population = props.get('pop', 0)
-            food_insecurity_score = props.get('food_insecurity_score', 0)
-            need = props.get('need', population * food_insecurity_score)
-            
-            cell = Cell(
-                geoid=props['geoid'],
-                lat=centroid_lat,
-                lon=centroid_lon,
-                population=population,
-                food_insecurity_score=food_insecurity_score,
-                poverty_rate=props.get('poverty_rate', 0),
-                snap_rate=props.get('snap_rate', 0),
-                vehicle_access_rate=props.get('vehicle_access_rate', 1.0),
-                need=need,
-                geometry=block['geometry']
-            )
-            
-            if cell.population > 0:  # Only include populated cells
-                cells.append(cell)
-                total_population += cell.population
-                total_need += cell.need
+            for future in as_completed(future_to_chunk):
+                try:
+                    chunk_cells = future.result()
+                    cells.extend(chunk_cells)
+                except Exception as e:
+                    logger.error(f"Error processing block chunk: {e}")
+        
+        # Calculate statistics
+        total_population = sum(c.population for c in cells)
+        total_need = sum(c.need for c in cells)
         
         # Calculate domain statistics
         statistics = {
@@ -221,6 +221,59 @@ class DataAnalysisAgent:
             'cells': cells,
             'statistics': statistics
         }
+    
+    @staticmethod
+    def _process_blocks_chunk(blocks_chunk: List[Dict]) -> List[Cell]:
+        """Process a chunk of blocks (for parallel processing)"""
+        cells = []
+        
+        for block in blocks_chunk:
+            props = block['properties']
+            
+            # Extract centroid from geometry
+            try:
+                coords = block['geometry']['coordinates'][0]
+                # Handle case where coords might be nested differently
+                if isinstance(coords[0], (int, float)):
+                    # Single coordinate pair
+                    centroid_lon = coords[0]
+                    centroid_lat = coords[1]
+                else:
+                    # List of coordinate pairs
+                    lons = [c[0] for c in coords]
+                    lats = [c[1] for c in coords]
+                    centroid_lon = sum(lons) / len(lons)
+                    centroid_lat = sum(lats) / len(lats)
+            except (IndexError, TypeError) as e:
+                continue  # Skip problematic blocks
+            
+            # Calculate need if not present
+            population = props.get('pop', 0)
+            food_insecurity_score = props.get('food_insecurity_score', 0)
+            need = props.get('need', population * food_insecurity_score)
+            
+            # Ensure numeric types
+            population = float(population) if population else 0
+            food_insecurity_score = float(food_insecurity_score) if food_insecurity_score else 0
+            need = float(need) if need else 0
+            
+            cell = Cell(
+                geoid=props['geoid'],
+                lat=float(centroid_lat),
+                lon=float(centroid_lon),
+                population=int(population),
+                food_insecurity_score=float(food_insecurity_score),
+                poverty_rate=float(props.get('poverty_rate', 0)),
+                snap_rate=float(props.get('snap_rate', 0)),
+                vehicle_access_rate=float(props.get('vehicle_access_rate', 1.0)),
+                need=float(need),
+                geometry=block['geometry']
+            )
+            
+            if cell.population > 0:  # Only include populated cells
+                cells.append(cell)
+        
+        return cells
 
 class OptimizationAgent:
     """Sub-agent for optimizing food bank locations"""
@@ -229,16 +282,140 @@ class OptimizationAgent:
                       max_locations: int, min_distance: float) -> Dict[str, Any]:
         """Optimize food bank locations using advanced algorithms"""
         import time
+        
         start_time = time.time()
         
-        # Calculate efficiency scores for each cell
+        # Use multiprocessing to calculate efficiency scores in parallel
+        num_workers = min(multiprocessing.cpu_count(), 8)  # Cap at 8 workers
+        
+        # Split cells into chunks for parallel processing
+        chunk_size = max(1, len(cells) // num_workers)
+        cell_chunks = [cells[i:i + chunk_size] for i in range(0, len(cells), chunk_size)]
+        
         scored_cells = []
-        for cell in cells:
+        
+        # Process cells in parallel
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            # Submit all chunks for processing
+            future_to_chunk = {
+                executor.submit(self._score_cells_chunk, chunk): chunk 
+                for chunk in cell_chunks
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_chunk):
+                try:
+                    chunk_results = future.result()
+                    scored_cells.extend(chunk_results)
+                except Exception as e:
+                    logger.error(f"Error processing chunk: {e}")
+        
+        # Sort by efficiency
+        scored_cells.sort(key=lambda x: x['efficiency'], reverse=True)
+        
+        # Greedy selection with distance constraint
+        selected_locations = []
+        remaining_budget = budget
+        total_impact = 0
+        used_cells = set()  # Track which cells have been used
+        
+        # Keep trying to add locations until we can't afford any more
+        # or we've exhausted all candidates
+        made_progress = True
+        iteration = 0
+        while made_progress and remaining_budget > 50000 and len(selected_locations) < max_locations:
+            made_progress = False
+            iteration += 1
+            
+            for i, scored_cell in enumerate(scored_cells):
+                if i in used_cells:  # Skip already used cells
+                    continue
+                    
+                if len(selected_locations) >= max_locations:
+                    break
+                    
+                cell_data = scored_cell['cell']
+                
+                # Check distance constraint
+                too_close = False
+                for loc in selected_locations:
+                    distance = self._calculate_distance(
+                        (cell_data.lat, cell_data.lon),
+                        (loc.lat, loc.lon)
+                    )
+                    if distance < min_distance:
+                        too_close = True
+                        break
+                
+                if too_close:
+                    continue
+                
+                # Check budget constraint (setup + 12 months operational for sustainability)
+                total_cost = scored_cell['setup_cost'] + (12 * scored_cell['operational_cost'])
+                if total_cost > remaining_budget:
+                    # Try with just setup cost if we have significant budget left
+                    if remaining_budget > scored_cell['setup_cost'] * 2 and remaining_budget > budget * 0.1:
+                        total_cost = scored_cell['setup_cost'] + (6 * scored_cell['operational_cost'])
+                        if total_cost > remaining_budget:
+                            continue
+                    else:
+                        continue
+                
+                # Add location
+                location = FoodBankLocation(
+                    geoid=cell_data.geoid,
+                    lat=cell_data.lat,
+                    lon=cell_data.lon,
+                    expected_impact=int(scored_cell['impact']),
+                    coverage_radius=1.5,  # miles
+                    efficiency_score=scored_cell['efficiency'],
+                    setup_cost=scored_cell['setup_cost'],
+                    operational_cost_monthly=scored_cell['operational_cost']
+                )
+                
+                selected_locations.append(location)
+                remaining_budget -= total_cost
+                try:
+                    total_impact += scored_cell['impact']
+                except TypeError as e:
+                    logger.error(f"Type error in optimization accumulation: {e}")
+                    logger.error(f"total_impact type: {type(total_impact)}, value: {total_impact}")
+                    logger.error(f"scored_cell['impact'] type: {type(scored_cell['impact'])}, value: {scored_cell['impact']}")
+                    raise
+                used_cells.add(i)  # Mark this cell as used
+                made_progress = True  # We added a location, so keep trying
+                
+                logger.info(f"Added location {len(selected_locations)}: {cell_data.geoid}, "
+                           f"impact: {scored_cell['impact']:.0f}, "
+                           f"cost: ${total_cost:,.0f}, "
+                           f"remaining budget: ${remaining_budget:,.0f}")
+        
+        logger.info(f"Optimization complete after {iteration} iterations. "
+                   f"Selected {len(selected_locations)} locations, "
+                   f"total impact: {total_impact:.0f}, "
+                   f"budget used: ${budget - remaining_budget:,.0f}")
+        
+        convergence_time = time.time() - start_time
+        
+        return {
+            'locations': selected_locations,
+            'efficiency_score': np.mean([loc.efficiency_score for loc in selected_locations]) if selected_locations else 0,
+            'iterations': iteration,
+            'convergence_time': convergence_time,
+            'budget_remaining': remaining_budget
+        }
+    
+    @staticmethod
+    def _score_cells_chunk(cells_chunk: List[Cell]) -> List[Dict[str, Any]]:
+        """Score a chunk of cells (for parallel processing)"""
+        scored_cells = []
+        
+        for cell in cells_chunk:
             if cell.population > 0:
                 # Multi-factor efficiency score
-                need_factor = cell.need / 1000  # Normalize need
-                accessibility_factor = 1 - cell.vehicle_access_rate  # Higher score for lower vehicle access
-                poverty_factor = cell.poverty_rate
+                need_factor = float(cell.need) / 1000  # Normalize need
+                accessibility_factor = 1 - float(cell.vehicle_access_rate)  # Higher score for lower vehicle access
+                poverty_factor = float(cell.poverty_rate)
                 
                 # Weighted efficiency score
                 efficiency = (
@@ -247,79 +424,35 @@ class OptimizationAgent:
                     0.2 * poverty_factor
                 )
                 
-                # Estimate costs (more realistic)
-                # Setup cost: $100k-300k based on population density
-                base_setup = 100000
-                population_factor = min(200000, cell.population * 20)  # Cap at 200k additional
-                setup_cost = base_setup + population_factor
+                # Estimate costs based on expected impact and population density
+                # More people served = larger facility needed
+                expected_people_served = min(float(cell.need) * 0.4, float(cell.population) * 0.3)
                 
-                # Operational cost: $10k-30k monthly based on scale
-                operational_cost = 10000 + (cell.population * 4)  # Monthly
+                # Ensure expected_people_served is a number
+                if isinstance(expected_people_served, (list, tuple)):
+                    expected_people_served = float(expected_people_served[0]) if expected_people_served else 0
+                
+                # Setup cost: $80k-250k based on scale
+                # Base cost + scaling factor based on people served
+                base_setup = 80000
+                scale_factor = min(170000, float(expected_people_served) * 50)  # $50 per person served capacity
+                setup_cost = base_setup + scale_factor
+                
+                # Operational cost: $8k-25k monthly based on people served
+                # Base operations + variable cost per person served
+                base_operations = 8000
+                variable_operations = min(17000, float(expected_people_served) * 2)  # $2/person/month
+                operational_cost = base_operations + variable_operations
                 
                 scored_cells.append({
                     'cell': cell,
                     'efficiency': efficiency,
                     'setup_cost': setup_cost,
                     'operational_cost': operational_cost,
-                    'impact': min(cell.need * 0.4, cell.population * 0.3)  # Realistic impact estimate
+                    'impact': expected_people_served  # Use the calculated impact
                 })
         
-        # Sort by efficiency
-        scored_cells.sort(key=lambda x: x['efficiency'], reverse=True)
-        
-        # Greedy selection with distance constraint
-        selected_locations = []
-        remaining_budget = budget
-        
-        for scored_cell in scored_cells:
-            if len(selected_locations) >= max_locations:
-                break
-                
-            cell_data = scored_cell['cell']
-            
-            # Check distance constraint
-            too_close = False
-            for loc in selected_locations:
-                distance = self._calculate_distance(
-                    (cell_data.lat, cell_data.lon),
-                    (loc.lat, loc.lon)
-                )
-                if distance < min_distance:
-                    too_close = True
-                    break
-            
-            if too_close:
-                continue
-            
-            # Check budget constraint (setup + 6 months operational)
-            total_cost = scored_cell['setup_cost'] + (6 * scored_cell['operational_cost'])
-            if total_cost > remaining_budget:
-                continue
-            
-            # Add location
-            location = FoodBankLocation(
-                geoid=cell_data.geoid,
-                lat=cell_data.lat,
-                lon=cell_data.lon,
-                expected_impact=int(scored_cell['impact']),
-                coverage_radius=1.5,  # miles
-                efficiency_score=scored_cell['efficiency'],
-                setup_cost=scored_cell['setup_cost'],
-                operational_cost_monthly=scored_cell['operational_cost']
-            )
-            
-            selected_locations.append(location)
-            remaining_budget -= total_cost
-        
-        convergence_time = time.time() - start_time
-        
-        return {
-            'locations': selected_locations,
-            'efficiency_score': np.mean([loc.efficiency_score for loc in selected_locations]) if selected_locations else 0,
-            'iterations': len(scored_cells),
-            'convergence_time': convergence_time,
-            'budget_remaining': remaining_budget
-        }
+        return scored_cells
     
     def _calculate_distance(self, coord1: tuple, coord2: tuple) -> float:
         """Calculate distance between two coordinates in miles"""
@@ -359,16 +492,31 @@ class ValidationAgent:
                 valid = False
                 adjustments_made += 1
             
-            # Validate budget
-            total_cost = location.setup_cost + (6 * location.operational_cost_monthly)
+            # Validate budget (use same calculation as optimization)
+            total_cost = location.setup_cost + (12 * location.operational_cost_monthly)
             if budget_used + total_cost > budget:
-                valid = False
-                adjustments_made += 1
+                # Try with 6 months if we have significant budget left
+                if budget - budget_used > location.setup_cost * 2:
+                    total_cost = location.setup_cost + (6 * location.operational_cost_monthly)
+                    if budget_used + total_cost > budget:
+                        valid = False
+                        adjustments_made += 1
+                else:
+                    valid = False
+                    adjustments_made += 1
             
             if valid:
                 validated_locations.append(location)
-                total_impact += location.expected_impact
-                budget_used += total_cost
+                try:
+                    total_impact += location.expected_impact
+                    budget_used += total_cost
+                except TypeError as e:
+                    logger.error(f"Type error in validation accumulation: {e}")
+                    logger.error(f"total_impact type: {type(total_impact)}, value: {total_impact}")
+                    logger.error(f"location.expected_impact type: {type(location.expected_impact)}, value: {location.expected_impact}")
+                    logger.error(f"budget_used type: {type(budget_used)}, value: {budget_used}")
+                    logger.error(f"total_cost type: {type(total_cost)}, value: {total_cost}")
+                    raise
         
         # Calculate coverage percentage
         coverage_percentage = (len(covered_cells) / len(cells)) * 100 if cells else 0

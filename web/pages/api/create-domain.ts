@@ -12,13 +12,13 @@ export default async function handler(
     return
   }
 
-  const { name, lat, lon, radius } = req.body
+  const { name, circles } = req.body
 
-  if (!name || !lat || !lon || !radius) {
+  if (!name || !circles || circles.length === 0) {
     return res.status(400).json({ error: 'Missing required fields' })
   }
 
-  // Run the orchestrator to create domain
+  // Run the orchestrator to create domain with multiple circles
   const scriptPath = path.join(process.cwd(), '..', 'samples', 'scripts', 'orchestrator.py')
   
   const env = {
@@ -27,14 +27,23 @@ export default async function handler(
     PYTHONPATH: path.join(process.cwd(), '..', 'samples')
   }
   
-  const pythonProcess = spawn('python3', [
+  // Build arguments for multiple circles
+  const args = [
     scriptPath,
     '--name', name,
-    '--lat', lat.toString(),
-    '--lon', lon.toString(),
-    '--radius', radius.toString(),
     '--steps', '1'  // Only run step 1 (create domain)
-  ], { env })
+  ]
+  
+  // Add each circle as separate lat/lon/radius arguments
+  circles.forEach((circle: any, index: number) => {
+    args.push(
+      '--lat', circle.lat.toString(),
+      '--lon', circle.lon.toString(),
+      '--radius', circle.radius.toString()
+    )
+  })
+  
+  const pythonProcess = spawn('python3', args, { env })
 
   let output = ''
   let error = ''

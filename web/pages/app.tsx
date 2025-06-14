@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import Head from 'next/head'
 import { ChevronDown, Trash2, Play, X } from 'lucide-react'
+import BudgetModal from '../components/BudgetModal'
 
-// Dynamic import to avoid SSR issues with Leaflet
-const Map = dynamic(() => import('../components/Map'), { ssr: false })
-const DomainSelector = dynamic(() => import('../components/DomainSelector'), { ssr: false })
+// Dynamic import to avoid SSR issues with Maps
+const Map = dynamic(() => import('../components/GoogleMap'), { ssr: false })
+const GoogleDomainSelector = dynamic(() => import('../components/GoogleDomainSelector'), { ssr: false })
 const OptimizationFloatingPanel = dynamic(() => import('../components/OptimizationFloatingPanel'), { ssr: false })
 
 interface Domain {
@@ -100,8 +101,43 @@ export default function Home() {
     name: '',
     lat: 34.0522,
     lon: -118.2437,
-    radius: 2.0
+    radius: 2.0,
+    circles: [] as Array<{ center: { lat: number; lng: number }; radius: number }>
   })
+
+  // Store the last valid budget to prevent loss
+  const [lastValidBudget, setLastValidBudget] = useState('')
+
+  // Custom setter for optimization budget with logging
+  const setOptimizationBudgetWithLog = (value: string) => {
+    console.log('[BUDGET] Setting optimizationBudget to:', value, 'from:', optimizationBudget)
+    setOptimizationBudget(value)
+  }
+
+  // Custom setter for last valid budget with logging
+  const setLastValidBudgetWithLog = (value: string) => {
+    console.log('[BUDGET] Setting lastValidBudget to:', value, 'from:', lastValidBudget)
+    setLastValidBudget(value)
+  }
+
+  // Update last valid budget when budget changes
+  useEffect(() => {
+    console.log('[BUDGET] optimizationBudget changed to:', optimizationBudget)
+    if (optimizationBudget && parseFloat(optimizationBudget) >= 500000) {
+      console.log('[BUDGET] Valid budget detected, updating lastValidBudget')
+      setLastValidBudgetWithLog(optimizationBudget)
+    }
+  }, [optimizationBudget])
+
+  // Monitor all budget-related state changes
+  useEffect(() => {
+    console.log('[BUDGET] === STATE UPDATE ===')
+    console.log('[BUDGET] optimizationBudget:', optimizationBudget)
+    console.log('[BUDGET] lastValidBudget:', lastValidBudget)
+    console.log('[BUDGET] showOptimization:', showOptimization)
+    console.log('[BUDGET] showBudgetInput:', showBudgetInput)
+    console.log('[BUDGET] ===================')
+  }, [optimizationBudget, lastValidBudget, showOptimization, showBudgetInput])
 
   // Fetch domains
   const fetchDomains = async () => {
@@ -158,22 +194,41 @@ export default function Home() {
 
   // Create new domain
   const createDomain = async () => {
+    // Validate that circles have been drawn
+    if (!newDomain.circles || newDomain.circles.length === 0) {
+      alert('Please draw at least one coverage area before creating the domain')
+      return
+    }
+
     // Auto-generate name if empty
     const domainName = newDomain.name.trim() || `Domain_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}Z`
+
+    // Prepare domain data with circles
+    const domainData = {
+      name: domainName,
+      circles: newDomain.circles.map(circle => ({
+        lat: circle.center.lat,
+        lon: circle.center.lng,
+        radius: circle.radius / 1609.34 // Convert meters to miles
+      }))
+    }
 
     setCreating(true)
     try {
       const response = await fetch('/api/create-domain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...newDomain, name: domainName })
+        body: JSON.stringify(domainData)
       })
 
       const data = await response.json()
       
       if (response.ok) {
         setIsCreatingDomain(false)
-        setNewDomain({ name: '', lat: 34.0522, lon: -118.2437, radius: 2.0 })
+        setNewDomain({ name: '', lat: 34.0522, lon: -118.2437, radius: 2.0, circles: [] })
+        // Auto-select the new domain
+        const newCollectionName = `d_${domainName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
+        setSelectedDomain(newCollectionName)
         // Refresh domains after a short delay
         setTimeout(() => fetchDomains(), 2000)
       } else {
@@ -194,6 +249,11 @@ export default function Home() {
   useEffect(() => {
     fetchDomains()
   }, [])
+
+  // Debug budget changes
+  useEffect(() => {
+    console.log('optimizationBudget changed:', optimizationBudget)
+  }, [optimizationBudget])
 
   // Fetch blocks when domain is selected
   useEffect(() => {
@@ -218,25 +278,90 @@ export default function Home() {
   }, [isDropdownOpen])
 
   // Start optimization process
-  const startOptimization = async () => {
+  const startOptimization = async (budgetOverride?: string) => {
+    console.log('[BUDGET] === START OPTIMIZATION ===')
+    console.log('[BUDGET] budgetOverride:', budgetOverride)
+    console.log('[BUDGET] Current state:', {
+      optimizationBudget,
+      optimizationBudgetType: typeof optimizationBudget,
+      optimizationBudgetLength: optimizationBudget.length,
+      lastValidBudget,
+      lastValidBudgetType: typeof lastValidBudget,
+      selectedDomain
+    })
+    
+    // Validate inputs before starting
+    if (!selectedDomain) {
+      console.log('[BUDGET] ERROR: No domain selected')
+      setOptimizationResult({
+        status: 'error',
+        error: 'Please select a domain first'
+      })
+      return
+    }
+    
+    // Use override budget first, then current budget, then fall back to last valid budget
+    const budgetToUse = budgetOverride || optimizationBudget || lastValidBudget
+    console.log('[BUDGET] Budget selection:', {
+      usingOverride: !!budgetOverride,
+      usingOptimizationBudget: !budgetOverride && !!optimizationBudget,
+      usingLastValidBudget: !budgetOverride && !optimizationBudget && !!lastValidBudget,
+      budgetToUse
+    })
+    
+    // Parse budget and validate
+    const budgetValue = parseFloat(budgetToUse)
+    console.log('[BUDGET] Budget validation:', {
+      budgetToUse,
+      budgetToUseType: typeof budgetToUse,
+      budgetValue,
+      budgetValueType: typeof budgetValue,
+      isValid: budgetValue >= 500000,
+      isNaN: isNaN(budgetValue),
+      isEmpty: !budgetToUse,
+      isEmptyString: budgetToUse === '',
+      isZero: budgetValue === 0
+    })
+    
+    if (!budgetToUse || isNaN(budgetValue) || budgetValue < 500000) {
+      console.log('[BUDGET] ERROR: Invalid budget, showing error')
+      setOptimizationResult({
+        status: 'error',
+        error: `Budget must be at least $500,000 (current: $${budgetValue || 0})`
+      })
+      return
+    }
+
     setIsOptimizing(true)
     setOptimizationResult(null)
     setAgentSteps([])
 
     try {
+      // Extract domain name from collection name (remove 'd_' prefix)
+      const domainName = selectedDomain.startsWith('d_') 
+        ? selectedDomain.substring(2) 
+        : selectedDomain
+
+      console.log('Starting optimization with:', {
+        domain: domainName,
+        budget: budgetValue,
+        selectedDomain: selectedDomain
+      })
+
       const response = await fetch('/api/optimize-locations-stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          domain: selectedDomain.replace('d_', ''),
-          budget: parseFloat(optimizationBudget),
+          domain: domainName,
+          budget: budgetValue,
         }),
       })
 
       if (!response.ok) {
         const errorData = await response.json()
+        console.error('API error response:', errorData)
         throw new Error(errorData.error || 'Failed to start optimization')
       }
 
@@ -311,13 +436,13 @@ export default function Home() {
               {/* Sidebar */}
         <div style={{ 
           width: '320px', 
-          backgroundColor: '#fafbfc', 
-          borderRight: '1px solid #e8eaed',
+          backgroundColor: 'hsl(25, 5%, 98%)', 
+          borderRight: '1px solid hsl(25, 5%, 90%)',
           display: 'flex',
           flexDirection: 'column'
         }}>
         {/* Header */}
-        <div style={{ padding: '24px', borderBottom: '1px solid #e8eaed', backgroundColor: '#ffffff' }}>
+        <div style={{ padding: '24px', borderBottom: '1px solid hsl(25, 5%, 90%)', backgroundColor: '#ffffff' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <h1 
               onClick={() => window.location.href = '/'}
@@ -325,46 +450,69 @@ export default function Home() {
                 fontSize: '24px', 
                 fontWeight: '700', 
                 margin: 0, 
-                color: '#2c3e50', 
+                color: 'hsl(140, 35%, 20%)', 
                 fontFamily: '"Funnel Display", system-ui, sans-serif',
                 cursor: 'pointer',
                 transition: 'color 0.2s ease'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.color = '#fb923c'
+                e.currentTarget.style.color = 'hsl(140, 30%, 25%)'
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.color = '#2c3e50'
+                e.currentTarget.style.color = 'hsl(140, 35%, 20%)'
               }}
             >
               banks
             </h1>
             {selectedDomain && (
               <button
-                onClick={() => setShowBudgetInput(true)}
+                onClick={() => {
+                  console.log('Play button clicked:', {
+                    optimizationBudget,
+                    lastValidBudget,
+                    hasOptimizationBudget: !!optimizationBudget,
+                    budgetValue: parseFloat(optimizationBudget || lastValidBudget)
+                  })
+                  
+                  // Use current budget or fall back to last valid budget
+                  const budgetToUse = optimizationBudget || lastValidBudget
+                  console.log('[BUDGET] Play button - budgetToUse:', budgetToUse)
+                  
+                  if (budgetToUse) {
+                    // If we have a budget, start optimization directly
+                    setOptimizationBudgetWithLog(budgetToUse) // Ensure budget is set
+                    setShowOptimization(true);
+                    // Pass the budget directly to avoid closure issues
+                    startOptimization(budgetToUse);
+                  } else {
+                    // Otherwise show the budget input modal
+                    console.log('[BUDGET] No budget found, showing budget modal')
+                    setShowBudgetInput(true);
+                  }
+                }}
                 style={{
                   width: '40px',
                   height: '40px',
                   borderRadius: '50%',
-                  backgroundColor: '#74b9ff',
+                  backgroundColor: 'hsl(140, 30%, 25%)',
                   border: 'none',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
-                  boxShadow: '0 2px 8px rgba(116, 185, 255, 0.3)',
+                  boxShadow: '0 2px 8px rgba(45, 90, 45, 0.3)',
                   marginLeft: 'auto'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#0984e3'
+                  e.currentTarget.style.backgroundColor = 'hsl(140, 35%, 20%)'
                   e.currentTarget.style.transform = 'scale(1.1)'
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(116, 185, 255, 0.4)'
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(45, 90, 45, 0.4)'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#74b9ff'
+                  e.currentTarget.style.backgroundColor = 'hsl(140, 30%, 25%)'
                   e.currentTarget.style.transform = 'scale(1)'
-                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(116, 185, 255, 0.3)'
+                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(45, 90, 45, 0.3)'
                 }}
               >
                 <Play size={20} style={{ color: 'white', marginLeft: '2px' }} />
@@ -374,17 +522,17 @@ export default function Home() {
         </div>
 
         {/* Visualization Mode Selector */}
-        <div style={{ padding: '16px', borderBottom: '1px solid #e8eaed', backgroundColor: '#ffffff' }}>
+        <div style={{ padding: '16px', borderBottom: '1px solid hsl(25, 5%, 90%)', backgroundColor: '#ffffff' }}>
           <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#34495e', margin: '0 0 8px 0', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
             Heatmap Overlay Layer
           </h3>
-          <div className="custom-dropdown" style={{ position: 'relative', width: '180px' }}>
+          <div className="custom-dropdown" style={{ position: 'relative', width: '220px' }}>
             <div
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               style={{
                 width: '100%',
                 padding: '8px 12px',
-                border: `1px solid ${isDropdownOpen ? '#74b9ff' : '#ddd'}`,
+                border: `1px solid ${isDropdownOpen ? 'hsl(140, 30%, 25%)' : 'hsl(25, 5%, 80%)'}`,
                 borderRadius: '8px',
                 fontSize: '14px',
                 backgroundColor: 'white',
@@ -393,7 +541,7 @@ export default function Home() {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 transition: 'all 0.2s ease',
-                boxShadow: isDropdownOpen ? '0 0 0 3px rgba(116, 185, 255, 0.1)' : '0 1px 3px rgba(0, 0, 0, 0.05)',
+                boxShadow: isDropdownOpen ? '0 0 0 3px rgba(45, 90, 45, 0.1)' : '0 1px 3px rgba(0, 0, 0, 0.05)',
                 fontFamily: '"Funnel Display", system-ui, sans-serif'
               }}
             >
@@ -417,7 +565,7 @@ export default function Home() {
                  left: 0,
                  right: 0,
                  backgroundColor: 'white',
-                 border: '1px solid #e8eaed',
+                 border: '1px solid hsl(25, 5%, 90%)',
                  borderRadius: '8px',
                  boxShadow: '0 8px 25px rgba(0, 0, 0, 0.08), 0 4px 10px rgba(0, 0, 0, 0.03)',
                  zIndex: 50,
@@ -435,11 +583,11 @@ export default function Home() {
                        padding: '10px 12px',
                        fontSize: '14px',
                        color: visualizationMode === key ? '#2c3e50' : '#34495e',
-                       backgroundColor: visualizationMode === key ? '#ecf8ff' : 'transparent',
+                       backgroundColor: visualizationMode === key ? 'hsl(140, 20%, 95%)' : 'transparent',
                        cursor: 'pointer',
                        transition: 'all 0.15s ease',
                        fontWeight: visualizationMode === key ? '500' : '400',
-                       borderLeft: visualizationMode === key ? '3px solid #74b9ff' : '3px solid transparent',
+                       borderLeft: visualizationMode === key ? '3px solid hsl(140, 30%, 25%)' : '3px solid transparent',
                        fontFamily: '"Funnel Display", system-ui, sans-serif'
                      }}
                     onMouseEnter={(e) => {
@@ -467,7 +615,7 @@ export default function Home() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ width: '12px', height: '12px', backgroundColor: '#74b9ff', borderRadius: '3px' }}></div>
+                <div style={{ width: '12px', height: '12px', backgroundColor: 'hsl(25, 5%, 60%)', borderRadius: '3px' }}></div>
                 <span style={{ fontSize: '12px', color: '#7f8c8d', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>No data</span>
               </div>
                              {(VISUALIZATION_MODES as any)[visualizationMode]?.ranges.map((range: any, index: number) => (
@@ -486,7 +634,7 @@ export default function Home() {
         </div>
 
         {/* Domain List */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '20px 16px', backgroundColor: '#fafbfc' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '20px 16px', backgroundColor: 'hsl(25, 5%, 98%)' }}>
           <div style={{ marginBottom: '16px' }}>
             <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#2c3e50', margin: 0, fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
               Recent Domains
@@ -503,8 +651,8 @@ export default function Home() {
                 marginTop: '48px',
                 padding: '32px 16px',
                 backgroundColor: 'white',
-                borderRadius: '12px',
-                border: '1px solid #e8eaed'
+                borderRadius: '8px',
+                border: '1px solid hsl(25, 5%, 90%)'
               }}>
                 <p style={{ color: '#95a5a6', fontSize: '14px', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
                                   No domains found
@@ -521,7 +669,7 @@ export default function Home() {
                   padding: '16px',
                   backgroundColor: '#e8f4fd',
                   border: '2px dashed #74b9ff',
-                  borderRadius: '12px',
+                  borderRadius: '8px',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
                   display: 'flex',
@@ -579,25 +727,25 @@ export default function Home() {
                   key={domain._id}
                   style={{
                     padding: '16px',
-                    backgroundColor: selectedDomain === domain.collection_name ? '#ecf8ff' : 'white',
-                    border: `2px solid ${selectedDomain === domain.collection_name ? '#74b9ff' : '#e8eaed'}`,
-                    borderRadius: '12px',
+                    backgroundColor: selectedDomain === domain.collection_name ? 'hsl(140, 20%, 95%)' : 'white',
+                    border: `2px solid ${selectedDomain === domain.collection_name ? 'hsl(140, 30%, 25%)' : 'hsl(25, 5%, 85%)'}`,
+                    borderRadius: '8px',
                     cursor: 'pointer',
                     transition: 'all 0.2s ease',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px',
-                    boxShadow: selectedDomain === domain.collection_name 
-                      ? '0 4px 12px rgba(116, 185, 255, 0.15)' 
-                      : '0 2px 4px rgba(0, 0, 0, 0.04)',
+                                          boxShadow: selectedDomain === domain.collection_name 
+                        ? '0 4px 12px rgba(45, 90, 45, 0.15)' 
+                        : '0 2px 4px rgba(0, 0, 0, 0.04)',
                     transform: selectedDomain === domain.collection_name ? 'translateY(-1px)' : 'translateY(0)',
                     position: 'relative'
                   }}
                   onMouseEnter={(e) => {
                     setHoveredDomain(domain._id || '')
                     if (selectedDomain !== domain.collection_name) {
-                      e.currentTarget.style.backgroundColor = '#f8f9fc'
-                      e.currentTarget.style.borderColor = '#c3d9ff'
+                      e.currentTarget.style.backgroundColor = 'hsl(25, 5%, 97%)'
+                      e.currentTarget.style.borderColor = 'hsl(140, 25%, 40%)'
                       e.currentTarget.style.transform = 'translateY(-1px)'
                       e.currentTarget.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.08)'
                     }
@@ -606,7 +754,7 @@ export default function Home() {
                     setHoveredDomain(null)
                     if (selectedDomain !== domain.collection_name) {
                       e.currentTarget.style.backgroundColor = 'white'
-                      e.currentTarget.style.borderColor = '#e8eaed'
+                      e.currentTarget.style.borderColor = 'hsl(25, 5%, 85%)'
                       e.currentTarget.style.transform = 'translateY(0)'
                       e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.04)'
                     }
@@ -674,7 +822,7 @@ export default function Home() {
                       width: '4px',
                       height: '4px',
                       borderRadius: '50%',
-                      backgroundColor: '#74b9ff'
+                      backgroundColor: 'hsl(140, 30%, 25%)'
                     }}></div>
                   )}
                 </div>
@@ -690,7 +838,7 @@ export default function Home() {
                   padding: '16px',
                   backgroundColor: '#e8f4fd',
                   border: '2px dashed #74b9ff',
-                  borderRadius: '12px',
+                  borderRadius: '8px',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
                   display: 'flex',
@@ -745,7 +893,35 @@ export default function Home() {
       </div>
 
       {/* Budget Input Modal */}
-      {showBudgetInput && (
+      <BudgetModal
+        open={showBudgetInput}
+        onClose={() => {
+          // Don't clear the budget when closing - keep it for reuse
+          console.log('[BUDGET] BudgetModal closed, keeping budget:', optimizationBudget)
+          setShowBudgetInput(false)
+        }}
+        onSubmit={(budget) => {
+          const budgetString = budget.toString()
+          console.log('[BUDGET] BudgetModal onSubmit:', { budget, budgetString })
+          setOptimizationBudgetWithLog(budgetString)
+          setLastValidBudgetWithLog(budgetString) // Also update last valid budget
+          setShowBudgetInput(false)
+          setShowOptimization(true)
+          // Use setTimeout to ensure state updates before starting optimization
+          setTimeout(() => {
+            console.log('[BUDGET] Starting optimization after timeout')
+            console.log('[BUDGET] Budget state in timeout:', {
+              optimizationBudget,
+              lastValidBudget,
+              budgetString // This is captured from closure
+            })
+            startOptimization(budgetString)
+          }, 100)
+        }}
+      />
+
+      {/* Old Budget Modal - Remove this */}
+      {false && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -826,7 +1002,7 @@ export default function Home() {
               gap: '12px',
               marginBottom: '24px'
             }}>
-              {[1000000, 2500000, 5000000].map((amount) => (
+              {[500000, 1000000, 2500000].map((amount) => (
                 <button
                   key={amount}
                   onClick={() => setOptimizationBudget(amount.toString())}
@@ -855,7 +1031,7 @@ export default function Home() {
                     }
                   }}
                 >
-                  ${(amount / 1000000).toFixed(1)}M
+                  ${amount >= 1000000 ? `${(amount / 1000000).toFixed(1)}M` : '500K'}
                 </button>
               ))}
             </div>
@@ -896,7 +1072,7 @@ export default function Home() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       const budget = parseFloat(optimizationBudget);
-                      if (!isNaN(budget) && budget >= 1000000) {
+                      if (!isNaN(budget) && budget >= 500000) {
                         setShowBudgetInput(false);
                         setShowOptimization(true);
                         startOptimization();
@@ -912,7 +1088,7 @@ export default function Home() {
                     padding: '14px 18px 14px 44px',
                     fontSize: '20px',
                     border: '2px solid #e5e7eb',
-                    borderRadius: '12px',
+                    borderRadius: '8px',
                     outline: 'none',
                     transition: 'all 0.2s ease',
                     fontFamily: '"Funnel Display", system-ui, sans-serif',
@@ -937,23 +1113,23 @@ export default function Home() {
               <div style={{
                 marginTop: '16px',
                 padding: '12px 16px',
-                backgroundColor: optimizationBudget && parseFloat(optimizationBudget) < 1000000 ? '#fef2f2' : '#f0f9ff',
+                backgroundColor: optimizationBudget && parseFloat(optimizationBudget) < 500000 ? '#fef2f2' : '#fffbeb',
                 borderRadius: '8px',
-                border: `1px solid ${optimizationBudget && parseFloat(optimizationBudget) < 1000000 ? '#fecaca' : '#bfdbfe'}`
+                border: `1px solid ${optimizationBudget && parseFloat(optimizationBudget) < 500000 ? '#fecaca' : '#fde68a'}`
               }}>
-                {optimizationBudget && parseFloat(optimizationBudget) < 1000000 ? (
+                {optimizationBudget && parseFloat(optimizationBudget) < 500000 ? (
                   <p style={{
                     fontSize: '13px',
                     color: '#dc2626',
                     margin: 0,
                     fontFamily: '"Funnel Display", system-ui, sans-serif'
                   }}>
-                    Minimum budget is $1,000,000 to establish at least one food bank
+                    Minimum budget is $500,000 to establish at least one food bank
                   </p>
                 ) : (
                   <p style={{
                     fontSize: '13px',
-                    color: '#1e40af',
+                    color: '#92400e',
                     margin: 0,
                     fontFamily: '"Funnel Display", system-ui, sans-serif'
                   }}>
@@ -967,42 +1143,42 @@ export default function Home() {
             </div>
             
             <button
-              onClick={() => {
-                const budget = parseFloat(optimizationBudget);
-                if (!isNaN(budget) && budget >= 1000000) {
-                  setShowBudgetInput(false);
-                  setShowOptimization(true);
-                  startOptimization();
-                }
-              }}
-              disabled={!optimizationBudget || parseFloat(optimizationBudget) < 1000000}
+                              onClick={() => {
+                  const budget = parseFloat(optimizationBudget);
+                  if (!isNaN(budget) && budget >= 500000) {
+                    setShowBudgetInput(false);
+                    setShowOptimization(true);
+                    startOptimization();
+                  }
+                }}
+                disabled={!optimizationBudget || parseFloat(optimizationBudget) < 500000}
               style={{
                 width: '100%',
                 padding: '16px 32px',
-                backgroundColor: (!optimizationBudget || parseFloat(optimizationBudget) < 1000000) ? '#e5e7eb' : '#000',
-                color: (!optimizationBudget || parseFloat(optimizationBudget) < 1000000) ? '#9ca3af' : '#fff',
+                                  backgroundColor: (!optimizationBudget || parseFloat(optimizationBudget) < 500000) ? '#e5e7eb' : '#000',
+                  color: (!optimizationBudget || parseFloat(optimizationBudget) < 500000) ? '#9ca3af' : '#fff',
                 border: 'none',
-                borderRadius: '12px',
+                borderRadius: '8px',
                 fontSize: '17px',
                 fontWeight: '700',
-                cursor: (!optimizationBudget || parseFloat(optimizationBudget) < 1000000) ? 'not-allowed' : 'pointer',
+                                  cursor: (!optimizationBudget || parseFloat(optimizationBudget) < 500000) ? 'not-allowed' : 'pointer',
                 transition: 'all 0.2s ease',
                 fontFamily: '"Funnel Display", system-ui, sans-serif'
               }}
-              onMouseEnter={(e) => {
-                if (optimizationBudget && parseFloat(optimizationBudget) >= 1000000) {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(0, 0, 0, 0.2)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (optimizationBudget && parseFloat(optimizationBudget) >= 1000000) {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }
-              }}
-            >
-              {optimizationBudget && parseFloat(optimizationBudget) >= 1000000 ? 
+                              onMouseEnter={(e) => {
+                  if (optimizationBudget && parseFloat(optimizationBudget) >= 500000) {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(0, 0, 0, 0.2)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (optimizationBudget && parseFloat(optimizationBudget) >= 500000) {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }
+                }}
+              >
+                {optimizationBudget && parseFloat(optimizationBudget) >= 500000 ? 
                 'Start Optimization' : 
                 'Enter Valid Budget'
               }
@@ -1028,227 +1204,129 @@ export default function Home() {
           <div style={{
             width: '100%',
             height: '100%',
-            backgroundColor: '#fafbfc',
-            display: 'flex',
-            flexDirection: 'column'
+            position: 'relative'
           }}>
-            {/* Header with Domain Name */}
+            {/* Full screen map */}
+            <GoogleDomainSelector
+              lat={newDomain.lat}
+              lon={newDomain.lon}
+              radius={newDomain.radius}
+              onLocationChange={(lat, lon) => setNewDomain({ ...newDomain, lat, lon })}
+              onRadiusChange={(radius) => setNewDomain({ ...newDomain, radius })}
+              onCirclesChange={(circles) => setNewDomain({ ...newDomain, circles })}
+            />
+
+            {/* Domain name input - floating top left */}
             <div style={{
-              padding: '20px 32px',
-              borderBottom: '1px solid #e8eaed',
-              backgroundColor: '#ffffff',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '16px'
+              position: 'absolute',
+              top: '24px',
+              left: '24px',
+              backgroundColor: 'white',
+              borderRadius: '8px',
+              padding: '20px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+              border: '1px solid hsl(25, 5%, 90%)',
+              zIndex: 10
             }}>
-              <div style={{ flex: 1 }}>
-                <input
-                  type="text"
-                  value={newDomain.name}
-                  onChange={(e) => setNewDomain({ ...newDomain, name: e.target.value })}
-                  placeholder="Domain name (auto-generated if empty)"
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    border: '2px solid #e8eaed',
-                    borderRadius: '8px',
-                    fontSize: '18px',
-                    fontWeight: '600',
-                    outline: 'none',
-                    fontFamily: '"Funnel Display", system-ui, sans-serif',
-                    transition: 'border-color 0.2s ease',
-                    color: '#2c3e50'
-                  }}
-                  onFocus={(e) => e.currentTarget.style.borderColor = '#74b9ff'}
-                  onBlur={(e) => e.currentTarget.style.borderColor = '#e8eaed'}
-                />
-              </div>
-            </div>
-            
-            {/* Controls and Map Layout */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '20px', gap: '20px' }}>
-              
-              {/* Top Controls Row */}
-              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-                
-                {/* Radius Selector */}
-                <div style={{ 
-                  flex: 1,
-                  backgroundColor: '#ffffff', 
-                  padding: '20px', 
-                  borderRadius: '12px',
-                  border: '1px solid #e8eaed',
-                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.04)'
-                }}>
-                  <div style={{ fontSize: '14px', fontWeight: '600', color: '#2c3e50', marginBottom: '12px', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                    Domain Radius
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <span style={{ fontSize: '14px', color: '#7f8c8d', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                      Coverage Area
-                    </span>
-                    <div style={{
-                      backgroundColor: '#74b9ff',
-                      color: 'white',
-                      padding: '4px 12px',
-                      borderRadius: '20px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      fontFamily: '"Funnel Display", system-ui, sans-serif'
-                    }}>
-                      {newDomain.radius} miles
-                    </div>
-                  </div>
-                  
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="50"
-                    step="0.5"
-                    value={newDomain.radius}
-                    onChange={(e) => setNewDomain({ ...newDomain, radius: parseFloat(e.target.value) })}
-                    style={{ 
-                      width: '100%',
-                      height: '6px',
-                      borderRadius: '3px',
-                      background: `linear-gradient(to right, #74b9ff 0%, #74b9ff ${(newDomain.radius - 0.5) / 49.5 * 100}%, #e8eaed ${(newDomain.radius - 0.5) / 49.5 * 100}%, #e8eaed 100%)`,
-                      outline: 'none',
-                      WebkitAppearance: 'none',
-                      cursor: 'pointer'
-                    }}
-                  />
-                  
-                  <div style={{ 
-                    display: 'flex', 
-                    justifyContent: 'space-between', 
-                    marginTop: '8px',
-                    fontSize: '12px',
-                    color: '#95a5a6',
-                    fontFamily: '"Funnel Display", system-ui, sans-serif'
-                  }}>
-                    <span>0.5 mi</span>
-                    <span>25 mi</span>
-                    <span>50 mi</span>
-                  </div>
-                </div>
-
-                {/* Location Data Card */}
-                <div style={{ 
-                  width: '280px',
-                  backgroundColor: '#ffffff', 
-                  padding: '20px', 
-                  borderRadius: '12px',
-                  border: '1px solid #e8eaed',
-                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.04)'
-                }}>
-                  <div style={{ fontSize: '14px', fontWeight: '600', color: '#2c3e50', marginBottom: '16px', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                    Selected Location
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '14px', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#95a5a6' }}>Latitude:</span> 
-                      <span style={{ color: '#2c3e50', fontWeight: '500' }}>{newDomain.lat.toFixed(4)}°</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#95a5a6' }}>Longitude:</span> 
-                      <span style={{ color: '#2c3e50', fontWeight: '500' }}>{newDomain.lon.toFixed(4)}°</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#95a5a6' }}>Radius:</span> 
-                      <span style={{ color: '#2c3e50', fontWeight: '500' }}>{newDomain.radius} miles</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#95a5a6' }}>Area:</span> 
-                      <span style={{ color: '#2c3e50', fontWeight: '500' }}>~{(Math.PI * newDomain.radius * newDomain.radius).toFixed(1)} sq mi</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Large Map Area */}
-              <div style={{ 
-                flex: 1, 
-                backgroundColor: '#ffffff', 
-                borderRadius: '12px',
-                border: '1px solid #e8eaed',
-                overflow: 'hidden',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
+              <label style={{
+                display: 'block',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: 'hsl(140, 35%, 20%)',
+                marginBottom: '8px',
+                fontFamily: '"Funnel Display", system-ui, sans-serif'
               }}>
-                <DomainSelector
-                  lat={newDomain.lat}
-                  lon={newDomain.lon}
-                  radius={newDomain.radius}
-                  onLocationChange={(lat, lon) => setNewDomain({ ...newDomain, lat, lon })}
-                  onRadiusChange={(radius) => setNewDomain({ ...newDomain, radius })}
-                />
-              </div>
+                Domain Name
+              </label>
+              <input
+                type="text"
+                value={newDomain.name}
+                onChange={(e) => setNewDomain({ ...newDomain, name: e.target.value })}
+                placeholder="Enter name (or leave empty)"
+                style={{
+                  width: '280px',
+                  padding: '10px 14px',
+                  border: '2px solid hsl(25, 5%, 85%)',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '500',
+                  outline: 'none',
+                  fontFamily: '"Funnel Display", system-ui, sans-serif',
+                  transition: 'border-color 0.2s ease',
+                  color: 'hsl(140, 35%, 20%)'
+                }}
+                onFocus={(e) => e.currentTarget.style.borderColor = 'hsl(140, 30%, 25%)'}
+                onBlur={(e) => e.currentTarget.style.borderColor = 'hsl(25, 5%, 85%)'}
+              />
             </div>
 
-            {/* Actions */}
+            {/* Create button - floating top right */}
             <div style={{
-              padding: '24px 32px',
-              borderTop: '1px solid #e8eaed',
-              backgroundColor: '#ffffff',
+              position: 'absolute',
+              top: '24px',
+              right: '24px',
               display: 'flex',
-              gap: '16px',
-              justifyContent: 'flex-end'
+              gap: '12px',
+              zIndex: 10
             }}>
               <button
                 onClick={() => {
                   setIsCreatingDomain(false)
-                  setNewDomain({ name: '', lat: 34.0522, lon: -118.2437, radius: 2.0 })
+                  setNewDomain({ name: '', lat: 34.0522, lon: -118.2437, radius: 2.0, circles: [] })
                 }}
                 style={{
                   padding: '12px 24px',
                   backgroundColor: 'white',
-                  color: '#34495e',
-                  border: '2px solid #e8eaed',
+                  color: 'hsl(25, 5%, 45%)',
+                  border: '2px solid hsl(25, 5%, 85%)',
                   borderRadius: '8px',
                   fontSize: '16px',
                   fontWeight: '500',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
-                  fontFamily: '"Funnel Display", system-ui, sans-serif'
+                  fontFamily: '"Funnel Display", system-ui, sans-serif',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f8f9fc'
-                  e.currentTarget.style.borderColor = '#c3d9ff'
+                  e.currentTarget.style.backgroundColor = 'hsl(25, 5%, 97%)'
+                  e.currentTarget.style.borderColor = 'hsl(25, 5%, 70%)'
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = 'white'
-                  e.currentTarget.style.borderColor = '#e8eaed'
+                  e.currentTarget.style.borderColor = 'hsl(25, 5%, 85%)'
                 }}
               >
                 Cancel
               </button>
               <button
                 onClick={createDomain}
-                disabled={creating}
+                disabled={creating || !newDomain.circles || newDomain.circles.length === 0}
                 style={{
                   padding: '12px 32px',
-                  backgroundColor: creating ? '#95a5a6' : '#74b9ff',
+                  backgroundColor: creating || !newDomain.circles || newDomain.circles.length === 0 ? 'hsl(25, 5%, 60%)' : 'hsl(140, 30%, 25%)',
                   color: 'white',
                   border: 'none',
                   borderRadius: '8px',
                   fontSize: '16px',
                   fontWeight: '600',
-                  cursor: creating ? 'not-allowed' : 'pointer',
+                  cursor: creating || !newDomain.circles || newDomain.circles.length === 0 ? 'not-allowed' : 'pointer',
                   transition: 'all 0.2s ease',
-                  boxShadow: creating ? 'none' : '0 4px 12px rgba(116, 185, 255, 0.2)',
-                  fontFamily: '"Funnel Display", system-ui, sans-serif'
+                  boxShadow: creating || !newDomain.circles || newDomain.circles.length === 0 ? 'none' : '0 4px 12px rgba(45, 90, 45, 0.2)',
+                  fontFamily: '"Funnel Display", system-ui, sans-serif',
+                  opacity: !newDomain.circles || newDomain.circles.length === 0 ? 0.6 : 1
                 }}
                 onMouseEnter={(e) => {
-                  if (!creating) {
-                    e.currentTarget.style.backgroundColor = '#0984e3'
+                  if (!creating && newDomain.circles && newDomain.circles.length > 0) {
+                    e.currentTarget.style.backgroundColor = 'hsl(140, 35%, 20%)'
                     e.currentTarget.style.transform = 'translateY(-1px)'
-                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(116, 185, 255, 0.3)'
+                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(45, 90, 45, 0.3)'
                   }
                 }}
                 onMouseLeave={(e) => {
-                  if (!creating) {
-                    e.currentTarget.style.backgroundColor = '#74b9ff'
+                  if (!creating && newDomain.circles && newDomain.circles.length > 0) {
+                    e.currentTarget.style.backgroundColor = 'hsl(140, 30%, 25%)'
                     e.currentTarget.style.transform = 'translateY(0)'
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(116, 185, 255, 0.2)'
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(45, 90, 45, 0.2)'
                   }
                 }}
               >
@@ -1295,7 +1373,7 @@ export default function Home() {
                   setShowOptimization(false);
                   setOptimizationResult(null);
                   setIsOptimizing(false);
-                  setOptimizationBudget('');
+                  // Don't clear the budget so it can be reused
                   setAgentSteps([]);
                 }}
               />

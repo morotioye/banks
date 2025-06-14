@@ -19,7 +19,11 @@ export default async function handler(
   }
 
   try {
-    const { domain, budget, maxLocations = 10, minDistanceBetweenBanks = 0.5 } = req.body as OptimizationRequest;
+    const { domain, budget, minDistanceBetweenBanks = 0.3 } = req.body as OptimizationRequest;
+    
+    // Don't set an artificial limit - let the algorithm maximize impact
+    // Only use maxLocations if explicitly provided, otherwise set a high limit
+    const maxLocations = req.body.maxLocations || 1000;
 
     // Validate input
     if (!domain || !budget) {
@@ -29,10 +33,10 @@ export default async function handler(
       });
     }
 
-    if (budget < 1000000) {
+    if (budget < 500000) {
       return res.status(400).json({
         status: 'error',
-        error: 'Minimum budget is $1,000,000'
+        error: 'Minimum budget is $500,000'
       });
     }
 
@@ -76,7 +80,7 @@ export default async function handler(
     });
 
     let lastAgentStep: any = null;
-    let minStepDuration = 2000; // 2 seconds minimum per step
+    let minStepDuration = 500; // Reduced from 2000ms to 500ms
 
     pythonProcess.stdout.on('data', (data) => {
       const lines = data.toString().split('\n').filter((line: string) => line.trim());

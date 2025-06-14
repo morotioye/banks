@@ -55,10 +55,10 @@ export default async function handler(
         });
       }
 
-      if (budget < 1000000) {
+      if (budget < 500000) {
         return res.status(400).json({
           status: 'error',
-          error: 'Minimum budget is $1,000,000'
+          error: 'Minimum budget is $500,000'
         });
       }
 
