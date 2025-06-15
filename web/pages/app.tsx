@@ -9,7 +9,7 @@ const Map = dynamic(() => import('../components/GoogleMap'), { ssr: false })
 const GoogleDomainSelector = dynamic(() => import('../components/GoogleDomainSelector'), { ssr: false })
 const OptimizationFloatingPanel = dynamic(() => import('../components/OptimizationFloatingPanel'), { ssr: false })
 
-interface Domain {
+interface Region {
   _id?: string
   collection_name: string
   name: string
@@ -98,16 +98,16 @@ const VISUALIZATION_MODES = {
 }
 
 export default function Home() {
-  const [domains, setDomains] = useState<Domain[]>([])
-  const [selectedDomain, setSelectedDomain] = useState<string>('')
+  const [regions, setRegions] = useState<Region[]>([])
+  const [selectedRegion, setSelectedRegion] = useState<string>('')
   const [blocks, setBlocks] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
-  const [loadingDomains, setLoadingDomains] = useState(true)
+  const [loadingRegions, setLoadingRegions] = useState(true)
   const [visualizationMode, setVisualizationMode] = useState<string>('food_insecurity_score')
   const [creating, setCreating] = useState(false)
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
-  const [isCreatingDomain, setIsCreatingDomain] = useState(false)
-  const [hoveredDomain, setHoveredDomain] = useState<string | null>(null)
+  const [isCreatingRegion, setIsCreatingRegion] = useState(false)
+  const [hoveredRegion, setHoveredRegion] = useState<string | null>(null)
   const [showOptimization, setShowOptimization] = useState(false)
   const [showBudgetInput, setShowBudgetInput] = useState(false)
   const [optimizationBudget, setOptimizationBudget] = useState('')
@@ -115,7 +115,7 @@ export default function Home() {
   const [isOptimizing, setIsOptimizing] = useState(false)
   const [agentSteps, setAgentSteps] = useState<any[]>([])
   // Note: calculatingScores state removed - no longer needed
-  const [newDomain, setNewDomain] = useState({
+  const [newRegion, setNewRegion] = useState({
     name: '',
     lat: 34.0522,
     lon: -118.2437,
@@ -157,22 +157,22 @@ export default function Home() {
     console.log('[BUDGET] ===================')
   }, [optimizationBudget, lastValidBudget, showOptimization, showBudgetInput])
 
-  // Fetch domains
-  const fetchDomains = async () => {
-    setLoadingDomains(true)
+  // Fetch regions
+  const fetchRegions = async () => {
+    setLoadingRegions(true)
     try {
-      const response = await fetch('/api/domains')
+      const response = await fetch('/api/regions')
       const data = await response.json()
-      console.log('Fetched domains data:', data.domains)
-      setDomains(data.domains || [])
+      console.log('Fetched regions data:', data.regions)
+      setRegions(data.regions || [])
     } catch (error) {
-      console.error('Error fetching domains:', error)
+      console.error('Error fetching regions:', error)
     } finally {
-      setLoadingDomains(false)
+      setLoadingRegions(false)
     }
   }
 
-  // Fetch blocks for selected domain
+  // Fetch blocks for selected region
   const fetchBlocks = async (collection: string) => {
     setLoading(true)
     try {
@@ -186,49 +186,49 @@ export default function Home() {
     }
   }
 
-  // Delete domain
-  const deleteDomain = async (domainId: string, collectionName: string) => {
+  // Delete region
+  const deleteRegion = async (regionId: string, collectionName: string) => {
     try {
-      const response = await fetch('/api/delete-domain', {
+      const response = await fetch('/api/delete-region', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          domainId: domainId,
+          regionId: regionId,
           collectionName: collectionName
         })
       })
 
       if (response.ok) {
-        // Clear selection if deleted domain was selected
-        if (selectedDomain === collectionName) {
-          setSelectedDomain('')
+        // Clear selection if deleted region was selected
+        if (selectedRegion === collectionName) {
+          setSelectedRegion('')
         }
-        // Refresh domains list
-        fetchDomains()
+        // Refresh regions list
+        fetchRegions()
       } else {
         const data = await response.json()
-        console.error('Failed to delete domain:', data.error)
+        console.error('Failed to delete region:', data.error)
       }
     } catch (error) {
-      console.error('Error deleting domain:', error)
+      console.error('Error deleting region:', error)
     }
   }
 
-  // Create new domain
-  const createDomain = async () => {
+  // Create new region
+  const createRegion = async () => {
     // Validate that circles have been drawn
-    if (!newDomain.circles || newDomain.circles.length === 0) {
-      alert('Please draw at least one coverage area before creating the domain')
+    if (!newRegion.circles || newRegion.circles.length === 0) {
+      alert('Please draw at least one coverage area before creating the region')
       return
     }
 
     // Auto-generate name if empty
-    const domainName = newDomain.name.trim() || `Domain_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}Z`
+    const regionName = newRegion.name.trim() || `Region_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}Z`
 
-    // Prepare domain data with circles
-    const domainData = {
-      name: domainName,
-      circles: newDomain.circles.map(circle => ({
+    // Prepare region data with circles
+    const regionData = {
+      name: regionName,
+      circles: newRegion.circles.map(circle => ({
         lat: circle.center.lat,
         lon: circle.center.lng,
         radius: circle.radius / 1609.34 // Convert meters to miles
@@ -237,28 +237,28 @@ export default function Home() {
 
     setCreating(true)
     try {
-      const response = await fetch('/api/create-domain', {
+      const response = await fetch('/api/create-region', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(domainData)
+        body: JSON.stringify(regionData)
       })
 
       const data = await response.json()
       
       if (response.ok) {
-        setIsCreatingDomain(false)
-        setNewDomain({ name: '', lat: 34.0522, lon: -118.2437, radius: 2.0, circles: [] })
-        // Auto-select the new domain
-        const newCollectionName = `d_${domainName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
-        setSelectedDomain(newCollectionName)
-        // Refresh domains after a short delay
-        setTimeout(() => fetchDomains(), 2000)
+        setIsCreatingRegion(false)
+        setNewRegion({ name: '', lat: 34.0522, lon: -118.2437, radius: 2.0, circles: [] })
+        // Auto-select the new region
+        const newCollectionName = `r_${regionName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
+        setSelectedRegion(newCollectionName)
+        // Refresh regions after a short delay
+        setTimeout(() => fetchRegions(), 2000)
       } else {
-        alert(data.error || 'Failed to create domain')
+        alert(data.error || 'Failed to create region')
       }
     } catch (error) {
-      console.error('Error creating domain:', error)
-      alert('Failed to create domain')
+      console.error('Error creating region:', error)
+      alert('Failed to create region')
     } finally {
       setCreating(false)
     }
@@ -269,7 +269,7 @@ export default function Home() {
 
   // Initial load
   useEffect(() => {
-    fetchDomains()
+    fetchRegions()
   }, [])
 
   // Debug budget changes
@@ -277,14 +277,14 @@ export default function Home() {
     console.log('optimizationBudget changed:', optimizationBudget)
   }, [optimizationBudget])
 
-  // Fetch blocks when domain is selected
+  // Fetch blocks when region is selected
   useEffect(() => {
-    if (selectedDomain) {
-      fetchBlocks(selectedDomain)
+    if (selectedRegion) {
+      fetchBlocks(selectedRegion)
     } else {
       setBlocks([])
     }
-  }, [selectedDomain])
+  }, [selectedRegion])
 
   // Handle clicking outside dropdown to close it
   useEffect(() => {
@@ -309,15 +309,15 @@ export default function Home() {
       optimizationBudgetLength: optimizationBudget.length,
       lastValidBudget,
       lastValidBudgetType: typeof lastValidBudget,
-      selectedDomain
+      selectedRegion
     })
     
     // Validate inputs before starting
-    if (!selectedDomain) {
-      console.log('[BUDGET] ERROR: No domain selected')
+    if (!selectedRegion) {
+      console.log('[BUDGET] ERROR: No region selected')
       setOptimizationResult({
         status: 'error',
-        error: 'Please select a domain first'
+        error: 'Please select a region first'
       })
       return
     }
@@ -359,15 +359,15 @@ export default function Home() {
     setAgentSteps([])
 
     try {
-      // Extract domain name from collection name (remove 'd_' prefix)
-      const domainName = selectedDomain.startsWith('d_') 
-        ? selectedDomain.substring(2) 
-        : selectedDomain
+      // Extract region name from collection name (remove 'r_' prefix)
+      const regionName = selectedRegion.startsWith('r_') 
+        ? selectedRegion.substring(2) 
+        : selectedRegion
 
       console.log('Starting optimization with:', {
-        domain: domainName,
+        region: regionName,
         budget: budgetValue,
-        selectedDomain: selectedDomain
+        selectedRegion: selectedRegion
       })
 
       const response = await fetch('/api/optimize-locations-stream', {
@@ -376,7 +376,7 @@ export default function Home() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          domain: domainName,
+          region: regionName,
           budget: budgetValue,
         }),
       })
@@ -486,7 +486,7 @@ export default function Home() {
             >
               banks
             </h1>
-            {selectedDomain && (
+            {selectedRegion && (
               <button
                 onClick={() => {
                   console.log('Play button clicked:', {
@@ -655,18 +655,18 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Domain List */}
+        {/* Region List */}
         <div style={{ flex: 1, overflow: 'auto', padding: '20px 16px', backgroundColor: 'hsl(25, 5%, 98%)' }}>
           <div style={{ marginBottom: '16px' }}>
             <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#2c3e50', margin: 0, fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-              Recent Domains
+              Recent Regions
             </h2>
             <p style={{ fontSize: '12px', color: '#7f8c8d', margin: '4px 0 0 0', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-              {loadingDomains ? 'Loading...' : domains.length === 0 ? 'No domains yet' : `Showing ${Math.min(3, domains.length)} most recent`}
+              {loadingRegions ? 'Loading...' : regions.length === 0 ? 'No regions yet' : `Showing ${Math.min(3, regions.length)} most recent`}
             </p>
           </div>
           
-          {loadingDomains ? (
+          {loadingRegions ? (
             <div style={{ 
               textAlign: 'center', 
               marginTop: '48px',
@@ -676,10 +676,10 @@ export default function Home() {
               border: '1px solid hsl(25, 5%, 90%)'
             }}>
               <p style={{ color: '#95a5a6', fontSize: '14px', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                Loading domains...
+                Loading regions...
               </p>
             </div>
-          ) : domains.length === 0 ? (
+          ) : regions.length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ 
                 textAlign: 'center', 
@@ -690,20 +690,20 @@ export default function Home() {
                 border: '1px solid hsl(25, 5%, 90%)'
               }}>
                 <p style={{ color: '#95a5a6', fontSize: '14px', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                                  No domains found
-              </p>
+                  No regions found
+                </p>
               </div>
               
-              {/* New Domain Button */}
+              {/* New Region Button */}
               <button
                 onClick={() => {
-                  setSelectedDomain('')
-                  setIsCreatingDomain(true)
+                  setSelectedRegion('')
+                  setIsCreatingRegion(true)
                 }}
                 style={{
                   padding: '16px',
-                  backgroundColor: '#e8f4fd',
-                  border: '2px dashed #74b9ff',
+                  backgroundColor: 'hsl(140, 20%, 95%)',
+                  border: '2px dashed hsl(140, 25%, 40%)',
                   borderRadius: '8px',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
@@ -716,14 +716,14 @@ export default function Home() {
                   minHeight: '72px'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#d6f0ff'
-                  e.currentTarget.style.borderColor = '#0984e3'
+                  e.currentTarget.style.backgroundColor = 'hsl(140, 25%, 90%)'
+                  e.currentTarget.style.borderColor = 'hsl(140, 30%, 25%)'
                   e.currentTarget.style.transform = 'translateY(-1px)'
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(116, 185, 255, 0.15)'
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(45, 90, 45, 0.15)'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#e8f4fd'
-                  e.currentTarget.style.borderColor = '#74b9ff'
+                  e.currentTarget.style.backgroundColor = 'hsl(140, 20%, 95%)'
+                  e.currentTarget.style.borderColor = 'hsl(140, 25%, 40%)'
                   e.currentTarget.style.transform = 'translateY(0)'
                   e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.04)'
                 }}
@@ -732,7 +732,7 @@ export default function Home() {
                   width: '32px',
                   height: '32px',
                   borderRadius: '50%',
-                  backgroundColor: '#74b9ff',
+                  backgroundColor: 'hsl(140, 30%, 25%)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -744,7 +744,7 @@ export default function Home() {
                 </div>
                 <div style={{ textAlign: 'left' }}>
                   <div style={{ fontSize: '15px', fontWeight: '600', color: '#2c3e50', marginBottom: '2px' }}>
-                    Create New Domain
+                    Create New Region
                   </div>
                   <div style={{ fontSize: '12px', color: '#7f8c8d' }}>
                     Define a new geographic area
@@ -754,31 +754,31 @@ export default function Home() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {domains
+              {regions
                 .sort((a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime())
                 .slice(0, 3)
-                .map((domain) => (
+                .map((region) => (
                 <div
-                  key={domain._id}
+                  key={region._id}
                   style={{
                     padding: '16px',
-                    backgroundColor: selectedDomain === domain.collection_name ? 'hsl(140, 20%, 95%)' : 'white',
-                    border: `2px solid ${selectedDomain === domain.collection_name ? 'hsl(140, 30%, 25%)' : 'hsl(25, 5%, 85%)'}`,
+                    backgroundColor: selectedRegion === region.collection_name ? 'hsl(140, 20%, 95%)' : 'white',
+                    border: `2px solid ${selectedRegion === region.collection_name ? 'hsl(140, 30%, 25%)' : 'hsl(25, 5%, 85%)'}`,
                     borderRadius: '8px',
                     cursor: 'pointer',
                     transition: 'all 0.2s ease',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px',
-                                          boxShadow: selectedDomain === domain.collection_name 
+                                          boxShadow: selectedRegion === region.collection_name 
                         ? '0 4px 12px rgba(45, 90, 45, 0.15)' 
                         : '0 2px 4px rgba(0, 0, 0, 0.04)',
-                    transform: selectedDomain === domain.collection_name ? 'translateY(-1px)' : 'translateY(0)',
+                    transform: selectedRegion === region.collection_name ? 'translateY(-1px)' : 'translateY(0)',
                     position: 'relative'
                   }}
                   onMouseEnter={(e) => {
-                    setHoveredDomain(domain._id || '')
-                    if (selectedDomain !== domain.collection_name) {
+                    setHoveredRegion(region._id || '')
+                    if (selectedRegion !== region.collection_name) {
                       e.currentTarget.style.backgroundColor = 'hsl(25, 5%, 97%)'
                       e.currentTarget.style.borderColor = 'hsl(140, 25%, 40%)'
                       e.currentTarget.style.transform = 'translateY(-1px)'
@@ -786,8 +786,8 @@ export default function Home() {
                     }
                   }}
                   onMouseLeave={(e) => {
-                    setHoveredDomain(null)
-                    if (selectedDomain !== domain.collection_name) {
+                    setHoveredRegion(null)
+                    if (selectedRegion !== region.collection_name) {
                       e.currentTarget.style.backgroundColor = 'white'
                       e.currentTarget.style.borderColor = 'hsl(25, 5%, 85%)'
                       e.currentTarget.style.transform = 'translateY(0)'
@@ -797,40 +797,40 @@ export default function Home() {
                 >
                   <div 
                     style={{ flex: 1 }}
-                    onClick={() => setSelectedDomain(domain.collection_name)}
+                    onClick={() => setSelectedRegion(region.collection_name)}
                   >
                     <h3 style={{ fontSize: '15px', fontWeight: '600', margin: 0, color: '#2c3e50', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                      {domain.name || domain.domain_name || domain.collection_name.replace(/^d_/, '').replace(/_/g, ' ')}
+                      {region.name || region.domain_name || region.collection_name.replace(/^r_/, '').replace(/_/g, ' ')}
                     </h3>
-                    {(domain.center && domain.center.coordinates) || domain.circles ? (
+                    {(region.center && region.center.coordinates) || region.circles ? (
                       <>
                         <p style={{ fontSize: '12px', color: '#7f8c8d', margin: '6px 0 2px 0', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                          {domain.center && domain.center.coordinates 
-                            ? `${domain.center.coordinates[1].toFixed(4)}, ${domain.center.coordinates[0].toFixed(4)}`
-                            : domain.circles && domain.circles.length > 0
-                            ? `${domain.circles[0].lat.toFixed(4)}, ${domain.circles[0].lon.toFixed(4)}`
+                          {region.center && region.center.coordinates 
+                            ? `${region.center.coordinates[1].toFixed(4)}, ${region.center.coordinates[0].toFixed(4)}`
+                            : region.circles && region.circles.length > 0
+                            ? `${region.circles[0].lat.toFixed(4)}, ${region.circles[0].lon.toFixed(4)}`
                             : 'Location not available'
                           }
                         </p>
                         <p style={{ fontSize: '12px', color: '#95a5a6', margin: '2px 0 0 0', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                          {domain.circles && domain.circles.length > 1 
-                            ? `${domain.circles.length} coverage areas`
-                            : domain.radius_miles 
-                            ? `${domain.radius_miles.toFixed(1)} mile radius` 
-                            : domain.circles && domain.circles.length === 1
-                            ? `${domain.circles[0].radius_miles.toFixed(1)} mile radius`
+                          {region.circles && region.circles.length > 1 
+                            ? `${region.circles.length} coverage areas`
+                            : region.radius_miles 
+                            ? `${region.radius_miles.toFixed(1)} mile radius` 
+                            : region.circles && region.circles.length === 1
+                            ? `${region.circles[0].radius_miles.toFixed(1)} mile radius`
                             : ''
                           }
-                          {domain.stats?.total_blocks 
-                            ? ` • ${domain.stats.total_blocks.toLocaleString()} blocks` 
-                            : domain.total_blocks
-                            ? ` • ${domain.total_blocks.toLocaleString()} blocks`
+                          {region.stats?.total_blocks 
+                            ? ` • ${region.stats.total_blocks.toLocaleString()} blocks` 
+                            : region.total_blocks
+                            ? ` • ${region.total_blocks.toLocaleString()} blocks`
                             : ''
                           }
                         </p>
-                        {domain.created_at && (
+                        {region.created_at && (
                           <p style={{ fontSize: '11px', color: '#bdc3c7', margin: '4px 0 0 0', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
-                            Created {new Date(domain.created_at).toLocaleDateString()}
+                            Created {new Date(region.created_at).toLocaleDateString()}
                           </p>
                         )}
                       </>
@@ -842,11 +842,11 @@ export default function Home() {
                   </div>
 
                   {/* Trash Icon - appears on hover */}
-                  {hoveredDomain === domain._id && (
+                  {hoveredRegion === region._id && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
-                        deleteDomain(domain._id || '', domain.collection_name)
+                        deleteRegion(region._id || '', region.collection_name)
                       }}
                       style={{
                         position: 'absolute',
@@ -875,7 +875,7 @@ export default function Home() {
                     </button>
                   )}
 
-                  {selectedDomain === domain.collection_name && (
+                  {selectedRegion === region.collection_name && (
                     <div style={{
                       width: '4px',
                       height: '4px',
@@ -886,16 +886,16 @@ export default function Home() {
                 </div>
               ))}
               
-              {/* New Domain Button */}
+              {/* New Region Button */}
               <button
                 onClick={() => {
-                  setSelectedDomain('')
-                  setIsCreatingDomain(true)
+                  setSelectedRegion('')
+                  setIsCreatingRegion(true)
                 }}
                 style={{
                   padding: '16px',
-                  backgroundColor: '#e8f4fd',
-                  border: '2px dashed #74b9ff',
+                  backgroundColor: 'hsl(140, 20%, 95%)',
+                  border: '2px dashed hsl(140, 25%, 40%)',
                   borderRadius: '8px',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
@@ -908,14 +908,14 @@ export default function Home() {
                   minHeight: '72px'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#d6f0ff'
-                  e.currentTarget.style.borderColor = '#0984e3'
+                  e.currentTarget.style.backgroundColor = 'hsl(140, 25%, 90%)'
+                  e.currentTarget.style.borderColor = 'hsl(140, 30%, 25%)'
                   e.currentTarget.style.transform = 'translateY(-1px)'
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(116, 185, 255, 0.15)'
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(45, 90, 45, 0.15)'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#e8f4fd'
-                  e.currentTarget.style.borderColor = '#74b9ff'
+                  e.currentTarget.style.backgroundColor = 'hsl(140, 20%, 95%)'
+                  e.currentTarget.style.borderColor = 'hsl(140, 25%, 40%)'
                   e.currentTarget.style.transform = 'translateY(0)'
                   e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.04)'
                 }}
@@ -924,7 +924,7 @@ export default function Home() {
                   width: '32px',
                   height: '32px',
                   borderRadius: '50%',
-                  backgroundColor: '#74b9ff',
+                  backgroundColor: 'hsl(140, 30%, 25%)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -936,7 +936,7 @@ export default function Home() {
                 </div>
                 <div style={{ textAlign: 'left' }}>
                   <div style={{ fontSize: '15px', fontWeight: '600', color: '#2c3e50', marginBottom: '2px' }}>
-                    Create New Domain
+                    Create New Region
                   </div>
                   <div style={{ fontSize: '12px', color: '#7f8c8d' }}>
                     Define a new geographic area
@@ -1257,8 +1257,8 @@ export default function Home() {
 
       {/* Map Area */}
       <div style={{ flex: 1, position: 'relative' }}>
-        {isCreatingDomain ? (
-          /* Domain Creation Interface */
+        {isCreatingRegion ? (
+          /* Region Creation Interface */
           <div style={{
             width: '100%',
             height: '100%',
@@ -1266,15 +1266,15 @@ export default function Home() {
           }}>
             {/* Full screen map */}
             <GoogleDomainSelector
-              lat={newDomain.lat}
-              lon={newDomain.lon}
-              radius={newDomain.radius}
-              onLocationChange={(lat, lon) => setNewDomain({ ...newDomain, lat, lon })}
-              onRadiusChange={(radius) => setNewDomain({ ...newDomain, radius })}
-              onCirclesChange={(circles) => setNewDomain({ ...newDomain, circles })}
+              lat={newRegion.lat}
+              lon={newRegion.lon}
+              radius={newRegion.radius}
+              onLocationChange={(lat, lon) => setNewRegion({ ...newRegion, lat, lon })}
+              onRadiusChange={(radius) => setNewRegion({ ...newRegion, radius })}
+              onCirclesChange={(circles) => setNewRegion({ ...newRegion, circles })}
             />
 
-            {/* Domain name input - floating top left */}
+            {/* Region name input - floating top left */}
             <div style={{
               position: 'absolute',
               top: '24px',
@@ -1294,12 +1294,12 @@ export default function Home() {
                 marginBottom: '8px',
                 fontFamily: '"Funnel Display", system-ui, sans-serif'
               }}>
-                Domain Name
+                Region Name
               </label>
               <input
                 type="text"
-                value={newDomain.name}
-                onChange={(e) => setNewDomain({ ...newDomain, name: e.target.value })}
+                value={newRegion.name}
+                onChange={(e) => setNewRegion({ ...newRegion, name: e.target.value })}
                 placeholder="Enter name (or leave empty)"
                 style={{
                   width: '280px',
@@ -1329,8 +1329,8 @@ export default function Home() {
             }}>
               <button
                 onClick={() => {
-                  setIsCreatingDomain(false)
-                  setNewDomain({ name: '', lat: 34.0522, lon: -118.2437, radius: 2.0, circles: [] })
+                  setIsCreatingRegion(false)
+                  setNewRegion({ name: '', lat: 34.0522, lon: -118.2437, radius: 2.0, circles: [] })
                 }}
                 style={{
                   padding: '12px 24px',
@@ -1357,42 +1357,42 @@ export default function Home() {
                 Cancel
               </button>
               <button
-                onClick={createDomain}
-                disabled={creating || !newDomain.circles || newDomain.circles.length === 0}
+                onClick={createRegion}
+                disabled={creating || !newRegion.circles || newRegion.circles.length === 0}
                 style={{
                   padding: '12px 32px',
-                  backgroundColor: creating || !newDomain.circles || newDomain.circles.length === 0 ? 'hsl(25, 5%, 60%)' : 'hsl(140, 30%, 25%)',
+                  backgroundColor: creating || !newRegion.circles || newRegion.circles.length === 0 ? 'hsl(25, 5%, 60%)' : 'hsl(140, 30%, 25%)',
                   color: 'white',
                   border: 'none',
                   borderRadius: '8px',
                   fontSize: '16px',
                   fontWeight: '600',
-                  cursor: creating || !newDomain.circles || newDomain.circles.length === 0 ? 'not-allowed' : 'pointer',
+                  cursor: creating || !newRegion.circles || newRegion.circles.length === 0 ? 'not-allowed' : 'pointer',
                   transition: 'all 0.2s ease',
-                  boxShadow: creating || !newDomain.circles || newDomain.circles.length === 0 ? 'none' : '0 4px 12px rgba(45, 90, 45, 0.2)',
+                  boxShadow: creating || !newRegion.circles || newRegion.circles.length === 0 ? 'none' : '0 4px 12px rgba(45, 90, 45, 0.2)',
                   fontFamily: '"Funnel Display", system-ui, sans-serif',
-                  opacity: !newDomain.circles || newDomain.circles.length === 0 ? 0.6 : 1
+                  opacity: !newRegion.circles || newRegion.circles.length === 0 ? 0.6 : 1
                 }}
                 onMouseEnter={(e) => {
-                  if (!creating && newDomain.circles && newDomain.circles.length > 0) {
+                  if (!creating && newRegion.circles && newRegion.circles.length > 0) {
                     e.currentTarget.style.backgroundColor = 'hsl(140, 35%, 20%)'
                     e.currentTarget.style.transform = 'translateY(-1px)'
                     e.currentTarget.style.boxShadow = '0 6px 16px rgba(45, 90, 45, 0.3)'
                   }
                 }}
                 onMouseLeave={(e) => {
-                  if (!creating && newDomain.circles && newDomain.circles.length > 0) {
+                  if (!creating && newRegion.circles && newRegion.circles.length > 0) {
                     e.currentTarget.style.backgroundColor = 'hsl(140, 30%, 25%)'
                     e.currentTarget.style.transform = 'translateY(0)'
                     e.currentTarget.style.boxShadow = '0 4px 12px rgba(45, 90, 45, 0.2)'
                   }
                 }}
               >
-                {creating ? 'Creating Domain...' : 'Create Domain'}
+                {creating ? 'Creating Region...' : 'Create Region'}
               </button>
             </div>
           </div>
-        ) : selectedDomain ? (
+        ) : selectedRegion ? (
           <>
             <Map 
               blocks={blocks} 
@@ -1449,8 +1449,8 @@ export default function Home() {
             backgroundColor: '#f9fafb'
           }}>
             <div style={{ textAlign: 'center', color: '#95a5a6' }}>
-              <p style={{ fontSize: '18px', marginBottom: '8px', fontFamily: '"Funnel Display", system-ui, sans-serif', fontWeight: '600', color: '#34495e' }}>No domain selected</p>
-              <p style={{ fontSize: '14px', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>Select a domain from the sidebar to view blocks</p>
+              <p style={{ fontSize: '18px', marginBottom: '8px', fontFamily: '"Funnel Display", system-ui, sans-serif', fontWeight: '600', color: '#34495e' }}>No region selected</p>
+              <p style={{ fontSize: '14px', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>Select a region from the sidebar to view blocks</p>
             </div>
           </div>
         )}
