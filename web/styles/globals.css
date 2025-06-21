@@ -94,4 +94,11 @@
 
 .border-forest-green {
   border-color: hsl(140, 30%, 25%);
+}
+
+/* Spinner animation */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 } 

@@ -246,13 +246,25 @@ export default function Home() {
       const data = await response.json()
       
       if (response.ok) {
+        // Close the creation interface
         setIsCreatingRegion(false)
         setNewRegion({ name: '', lat: 34.0522, lon: -118.2437, radius: 2.0, circles: [] })
-        // Auto-select the new region
-        const newCollectionName = `r_${regionName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
-        setSelectedRegion(newCollectionName)
-        // Refresh regions after a short delay
-        setTimeout(() => fetchRegions(), 2000)
+        
+        // Immediately refresh regions to get the latest list
+        await fetchRegions()
+        
+        // After refreshing, auto-select the most recently created region
+        // Wait a moment for the regions state to update
+        setTimeout(() => {
+          const newCollectionName = `r_${regionName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
+          setSelectedRegion(newCollectionName)
+          
+          // Trigger a manual refresh of the map blocks for the new region
+          fetchBlocks(newCollectionName)
+        }, 100)
+        
+        // Show success message
+        console.log('Region created successfully:', regionName)
       } else {
         alert(data.error || 'Failed to create region')
       }
@@ -699,6 +711,7 @@ export default function Home() {
                 onClick={() => {
                   setSelectedRegion('')
                   setIsCreatingRegion(true)
+                  setLoadingRegions(false) // Clear loading state when switching to create mode
                 }}
                 style={{
                   padding: '16px',
@@ -891,6 +904,7 @@ export default function Home() {
                 onClick={() => {
                   setSelectedRegion('')
                   setIsCreatingRegion(true)
+                  setLoadingRegions(false) // Clear loading state when switching to create mode
                 }}
                 style={{
                   padding: '16px',
@@ -1332,26 +1346,32 @@ export default function Home() {
                   setIsCreatingRegion(false)
                   setNewRegion({ name: '', lat: 34.0522, lon: -118.2437, radius: 2.0, circles: [] })
                 }}
+                disabled={creating}
                 style={{
                   padding: '12px 24px',
-                  backgroundColor: 'white',
-                  color: 'hsl(25, 5%, 45%)',
+                  backgroundColor: creating ? 'hsl(25, 5%, 85%)' : 'white',
+                  color: creating ? 'hsl(25, 5%, 60%)' : 'hsl(25, 5%, 45%)',
                   border: '2px solid hsl(25, 5%, 85%)',
                   borderRadius: '8px',
                   fontSize: '16px',
                   fontWeight: '500',
-                  cursor: 'pointer',
+                  cursor: creating ? 'not-allowed' : 'pointer',
                   transition: 'all 0.2s ease',
                   fontFamily: '"Funnel Display", system-ui, sans-serif',
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)'
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
+                  opacity: creating ? 0.6 : 1
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'hsl(25, 5%, 97%)'
-                  e.currentTarget.style.borderColor = 'hsl(25, 5%, 70%)'
+                  if (!creating) {
+                    e.currentTarget.style.backgroundColor = 'hsl(25, 5%, 97%)'
+                    e.currentTarget.style.borderColor = 'hsl(25, 5%, 70%)'
+                  }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white'
-                  e.currentTarget.style.borderColor = 'hsl(25, 5%, 85%)'
+                  if (!creating) {
+                    e.currentTarget.style.backgroundColor = 'white'
+                    e.currentTarget.style.borderColor = 'hsl(25, 5%, 85%)'
+                  }
                 }}
               >
                 Cancel
@@ -1371,7 +1391,10 @@ export default function Home() {
                   transition: 'all 0.2s ease',
                   boxShadow: creating || !newRegion.circles || newRegion.circles.length === 0 ? 'none' : '0 4px 12px rgba(45, 90, 45, 0.2)',
                   fontFamily: '"Funnel Display", system-ui, sans-serif',
-                  opacity: !newRegion.circles || newRegion.circles.length === 0 ? 0.6 : 1
+                  opacity: !newRegion.circles || newRegion.circles.length === 0 ? 0.6 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
                 }}
                 onMouseEnter={(e) => {
                   if (!creating && newRegion.circles && newRegion.circles.length > 0) {
@@ -1388,9 +1411,82 @@ export default function Home() {
                   }
                 }}
               >
+                {creating && (
+                  <div style={{
+                    width: '16px',
+                    height: '16px',
+                    border: '2px solid white',
+                    borderTop: '2px solid transparent',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite'
+                  }} />
+                )}
                 {creating ? 'Creating Region...' : 'Create Region'}
               </button>
             </div>
+
+            {/* Loading overlay when creating */}
+            {creating && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 20
+              }}>
+                <div style={{
+                  backgroundColor: 'white',
+                  padding: '40px 48px',
+                  borderRadius: '12px',
+                  boxShadow: '0 20px 40px rgba(0, 0, 0, 0.15)',
+                  textAlign: 'center',
+                  border: '1px solid hsl(25, 5%, 90%)',
+                  maxWidth: '400px'
+                }}>
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    border: '4px solid hsl(140, 30%, 85%)',
+                    borderTop: '4px solid hsl(140, 30%, 25%)',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    margin: '0 auto 24px'
+                  }} />
+                  <h3 style={{
+                    margin: '0 0 12px 0',
+                    fontSize: '20px',
+                    fontWeight: '600',
+                    color: 'hsl(140, 35%, 20%)',
+                    fontFamily: '"Funnel Display", system-ui, sans-serif'
+                  }}>
+                    Creating Region
+                  </h3>
+                  <p style={{
+                    margin: '0 0 8px 0',
+                    fontSize: '16px',
+                    color: 'hsl(25, 5%, 45%)',
+                    fontFamily: '"Funnel Display", system-ui, sans-serif',
+                    lineHeight: '1.4'
+                  }}>
+                    Processing {newRegion.circles?.length || 0} coverage area{(newRegion.circles?.length || 0) !== 1 ? 's' : ''}...
+                  </p>
+                  <p style={{
+                    margin: 0,
+                    fontSize: '14px',
+                    color: 'hsl(25, 5%, 60%)',
+                    fontFamily: '"Funnel Display", system-ui, sans-serif'
+                  }}>
+                    This may take up to 30 seconds
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         ) : selectedRegion ? (
           <>
