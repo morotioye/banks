@@ -161,10 +161,10 @@ export default function Home() {
   const fetchRegions = async () => {
     setLoadingRegions(true)
     try {
-      const response = await fetch('/api/regions')
+      const response = await fetch('/api/domains')
       const data = await response.json()
-      console.log('Fetched regions data:', data.regions)
-      setRegions(data.regions || [])
+      console.log('Fetched regions data:', data.domains)
+      setRegions(data.domains || [])
     } catch (error) {
       console.error('Error fetching regions:', error)
     } finally {
@@ -189,11 +189,11 @@ export default function Home() {
   // Delete region
   const deleteRegion = async (regionId: string, collectionName: string) => {
     try {
-      const response = await fetch('/api/delete-region', {
+      const response = await fetch('/api/delete-domain', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          regionId: regionId,
+          domainId: regionId,
           collectionName: collectionName
         })
       })
@@ -237,7 +237,7 @@ export default function Home() {
 
     setCreating(true)
     try {
-      const response = await fetch('/api/create-region', {
+      const response = await fetch('/api/create-domain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(regionData)

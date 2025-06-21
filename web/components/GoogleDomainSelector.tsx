@@ -281,7 +281,7 @@ export default function GoogleDomainSelector({ lat, lon, radius, onLocationChang
           <span style={{ fontSize: '20px' }}>
             {isDrawingMode ? '✓' : '⊕'}
           </span>
-          {isDrawingMode ? 'Confirm' : `Draw Radius (${drawnCircles.length}/5)`}
+          {isDrawingMode ? 'Confirm' : `${drawnCircles.length > 0 ? 'Add Radius' : 'Draw Radius'} (${drawnCircles.length}/5)`}
         </button>
         
         {drawnCircles.length > 0 && (
@@ -322,8 +322,8 @@ export default function GoogleDomainSelector({ lat, lon, radius, onLocationChang
         )}
       </div>
 
-      {/* Instructions when in drawing mode */}
-      {isDrawingMode && (
+      {/* Instructions when in drawing mode - only show if no circles drawn yet */}
+      {isDrawingMode && drawnCircles.length === 0 && (
         <div style={{
           position: 'absolute',
           top: '50%',
