@@ -52,7 +52,7 @@ export default function NewRegionPage() {
       
       if (response.ok) {
         // Redirect to the new region page using the returned regionId
-        const regionId = data.regionId || `r_${regionName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
+        const regionId = data.regionId || `d_${regionName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
         router.push(`/${regionId}`)
       } else {
         alert(data.error || 'Failed to create region')

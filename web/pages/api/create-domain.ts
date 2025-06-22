@@ -65,8 +65,8 @@ export default async function handler(
       })
     }
 
-    // Generate the collection name that would be created
-    const collectionName = `r_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
+    // Generate the collection name that would be created (Python uses d_ prefix)
+    const collectionName = `d_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
 
     res.status(201).json({ 
       success: true,

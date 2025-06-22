@@ -206,7 +206,7 @@ export default function RegionPage() {
     setAgentSteps([])
 
     try {
-      const regionName = region.collection_name.startsWith('r_') 
+      const regionName = region.collection_name.startsWith('d_') 
         ? region.collection_name.substring(2) 
         : region.collection_name
 
@@ -216,7 +216,7 @@ export default function RegionPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          region: regionName,
+          domain: regionName,
           budget: budgetValue,
         }),
       })

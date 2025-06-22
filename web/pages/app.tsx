@@ -371,8 +371,8 @@ export default function Home() {
     setAgentSteps([])
 
     try {
-      // Extract region name from collection name (remove 'r_' prefix)
-      const regionName = selectedRegion.startsWith('r_') 
+      // Extract region name from collection name (remove 'd_' prefix)
+      const regionName = selectedRegion.startsWith('d_') 
         ? selectedRegion.substring(2) 
         : selectedRegion
 
@@ -388,7 +388,7 @@ export default function Home() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          region: regionName,
+          domain: regionName,
           budget: budgetValue,
         }),
       })
