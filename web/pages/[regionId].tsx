@@ -206,6 +206,7 @@ export default function RegionPage() {
     setAgentSteps([])
 
     try {
+      // Extract just the domain name (Python script will add d_ prefix)
       const regionName = region.collection_name.startsWith('d_') 
         ? region.collection_name.substring(2) 
         : region.collection_name
