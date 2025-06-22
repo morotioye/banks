@@ -371,8 +371,8 @@ export default function Home() {
     setAgentSteps([])
 
     try {
-      // Extract region name from collection name (remove 'r_' prefix)
-      const regionName = selectedRegion.startsWith('r_') 
+      // Extract region name from collection name (remove 'd_' prefix)
+      const regionName = selectedRegion.startsWith('d_') 
         ? selectedRegion.substring(2) 
         : selectedRegion
 
@@ -388,7 +388,7 @@ export default function Home() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          region: regionName,
+          domain: regionName,
           budget: budgetValue,
         }),
       })
@@ -708,11 +708,7 @@ export default function Home() {
               
               {/* New Region Button */}
               <button
-                onClick={() => {
-                  setSelectedRegion('')
-                  setIsCreatingRegion(true)
-                  setLoadingRegions(false) // Clear loading state when switching to create mode
-                }}
+                onClick={() => window.location.href = '/new'}
                 style={{
                   padding: '16px',
                   backgroundColor: 'hsl(140, 20%, 95%)',
@@ -810,7 +806,7 @@ export default function Home() {
                 >
                   <div 
                     style={{ flex: 1 }}
-                    onClick={() => setSelectedRegion(region.collection_name)}
+                    onClick={() => window.location.href = `/${region.collection_name}`}
                   >
                     <h3 style={{ fontSize: '15px', fontWeight: '600', margin: 0, color: '#2c3e50', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
                       {region.name || region.domain_name || region.collection_name.replace(/^r_/, '').replace(/_/g, ' ')}
@@ -901,11 +897,7 @@ export default function Home() {
               
               {/* New Region Button */}
               <button
-                onClick={() => {
-                  setSelectedRegion('')
-                  setIsCreatingRegion(true)
-                  setLoadingRegions(false) // Clear loading state when switching to create mode
-                }}
+                onClick={() => window.location.href = '/new'}
                 style={{
                   padding: '16px',
                   backgroundColor: 'hsl(140, 20%, 95%)',
