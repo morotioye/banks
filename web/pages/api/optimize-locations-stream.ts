@@ -9,6 +9,18 @@ interface OptimizationRequest {
   minDistanceBetweenBanks?: number;
 }
 
+interface WarehouseLocation {
+  geoid: string;
+  lat: number;
+  lon: number;
+  capacity: number;
+  distribution_radius: number;
+  efficiency_score: number;
+  setup_cost: number;
+  operational_cost_monthly: number;
+  food_banks_served: string[];
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse

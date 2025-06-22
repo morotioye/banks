@@ -12,10 +12,23 @@ interface OptimizationLocation {
   operational_cost_monthly: number;
 }
 
+interface WarehouseLocation {
+  geoid: string;
+  lat: number;
+  lon: number;
+  capacity: number;
+  distribution_radius: number;
+  efficiency_score: number;
+  setup_cost: number;
+  operational_cost_monthly: number;
+  food_banks_served: string[];
+}
+
 interface OptimizationResult {
   status: 'success' | 'error' | 'in_progress';
   data?: {
     locations: OptimizationLocation[];
+    warehouses: WarehouseLocation[];
     total_people_served: number;
     total_budget_used: number;
     coverage_percentage: number;
@@ -492,7 +505,7 @@ export default function OptimizationFloatingPanel({
               </div>
             </div>
 
-            {/* Locations List */}
+            {/* Food Bank Locations List */}
             <div>
               <h3 style={{
                 fontSize: '16px',
@@ -500,23 +513,23 @@ export default function OptimizationFloatingPanel({
                 color: '#374151',
                 margin: '0 0 12px 0'
               }}>
-                Optimized Locations
+                Food Bank Locations
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {result.data.locations.map((location, index) => (
                   <div
                     key={location.geoid}
                     style={{
-                      backgroundColor: '#f9fafb',
+                      backgroundColor: '#f0fdf4',
                       borderRadius: '8px',
                       padding: '12px',
-                      border: '1px solid #e5e7eb'
+                      border: '1px solid #bbf7d0'
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                       <div>
-                        <p style={{ fontSize: '14px', fontWeight: '600', color: '#111827', margin: '0 0 4px 0' }}>
-                          Location {index + 1}
+                        <p style={{ fontSize: '14px', fontWeight: '600', color: '#15803d', margin: '0 0 4px 0' }}>
+                          Food Bank #{index + 1}
                         </p>
                         <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>
                           {location.lat.toFixed(4)}, {location.lon.toFixed(4)}
@@ -536,7 +549,7 @@ export default function OptimizationFloatingPanel({
                       justifyContent: 'space-between',
                       marginTop: '8px',
                       paddingTop: '8px',
-                      borderTop: '1px solid #e5e7eb'
+                      borderTop: '1px solid #dcfce7'
                     }}>
                       <span style={{ fontSize: '12px', color: '#6b7280' }}>
                         Setup: {formatCurrency(location.setup_cost)}
@@ -549,6 +562,71 @@ export default function OptimizationFloatingPanel({
                 ))}
               </div>
             </div>
+
+            {/* Warehouse Locations List */}
+            {result.data.warehouses && result.data.warehouses.length > 0 && (
+              <div style={{
+                marginTop: '20px'
+              }}>
+                <h3 style={{
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#374151',
+                  margin: '0 0 12px 0'
+                }}>
+                  Supply Warehouses
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {result.data.warehouses.map((warehouse, index) => (
+                    <div
+                      key={warehouse.geoid}
+                      style={{
+                        backgroundColor: '#fffbeb',
+                        borderRadius: '8px',
+                        padding: '12px',
+                        border: '1px solid #fed7aa'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                        <div>
+                          <p style={{ fontSize: '14px', fontWeight: '600', color: '#c2410c', margin: '0 0 4px 0' }}>
+                            Warehouse W{index + 1}
+                          </p>
+                          <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>
+                            {warehouse.lat.toFixed(4)}, {warehouse.lon.toFixed(4)}
+                          </p>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <p style={{ fontSize: '14px', fontWeight: '600', color: '#ea580c', margin: '0 0 2px 0' }}>
+                            {formatNumber(warehouse.capacity)}
+                          </p>
+                          <p style={{ fontSize: '11px', color: '#6b7280', margin: 0 }}>
+                            units capacity
+                          </p>
+                        </div>
+                      </div>
+                      <p style={{ fontSize: '11px', color: '#6b7280', margin: '8px 0' }}>
+                        Serves {warehouse.food_banks_served.length} food bank{warehouse.food_banks_served.length !== 1 ? 's' : ''} within {warehouse.distribution_radius} mile radius
+                      </p>
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        marginTop: '8px',
+                        paddingTop: '8px',
+                        borderTop: '1px solid #fed7aa'
+                      }}>
+                        <span style={{ fontSize: '12px', color: '#6b7280' }}>
+                          Setup: {formatCurrency(warehouse.setup_cost)}
+                        </span>
+                        <span style={{ fontSize: '12px', color: '#6b7280' }}>
+                          Monthly: {formatCurrency(warehouse.operational_cost_monthly)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Optimization Metrics */}
             <div style={{

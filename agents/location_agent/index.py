@@ -62,10 +62,24 @@ class FoodBankLocation:
     operational_cost_monthly: float
 
 @dataclass
+class WarehouseLocation:
+    """Optimized warehouse location"""
+    geoid: str
+    lat: float
+    lon: float
+    capacity: int  # Capacity in units of food
+    distribution_radius: float  # miles
+    efficiency_score: float
+    setup_cost: float
+    operational_cost_monthly: float
+    food_banks_served: List[str]  # List of food bank geoids served
+
+@dataclass
 class OptimizationResult:
     """Complete optimization result"""
     status: str
     locations: List[FoodBankLocation]
+    warehouses: List[WarehouseLocation]
     total_people_served: int
     total_budget_used: float
     coverage_percentage: float
@@ -82,6 +96,7 @@ class LocationOptimizationAgent:
         # Initialize sub-agents
         self.data_analyzer = DataAnalysisAgent(self.db)
         self.optimizer = OptimizationAgent()
+        self.warehouse_optimizer = WarehouseOptimizationAgent()
         self.validator = ValidationAgent()
         
     async def optimize_locations(self, request: OptimizationRequest) -> OptimizationResult:
@@ -92,13 +107,14 @@ class LocationOptimizationAgent:
         
         try:
             # Step 1: Data Analysis
-            logger.info("Step 1/3: Analyzing population and food insecurity data...")
+            logger.info("Step 1/4: Analyzing population and food insecurity data...")
             analysis_result = await self.data_analyzer.analyze_domain(request.domain)
             
             if not analysis_result['cells']:
                 return OptimizationResult(
                     status="error",
                     locations=[],
+                    warehouses=[],
                     total_people_served=0,
                     total_budget_used=0,
                     coverage_percentage=0,
@@ -106,19 +122,30 @@ class LocationOptimizationAgent:
                     timestamp=datetime.now().isoformat()
                 )
             
-            # Step 2: Location Optimization
-            logger.info("Step 2/3: Optimizing food bank locations...")
+            # Step 2: Food Bank Location Optimization (75% of budget)
+            food_bank_budget = request.budget * 0.75
+            logger.info(f"Step 2/4: Optimizing food bank locations with ${food_bank_budget:,.0f}...")
             optimization_result = await self.optimizer.optimize(
                 cells=analysis_result['cells'],
-                budget=request.budget,
+                budget=food_bank_budget,
                 max_locations=request.max_locations,
                 min_distance=request.min_distance_between_banks
             )
             
-            # Step 3: Validation
-            logger.info("Step 3/3: Validating proposed locations...")
+            # Step 3: Warehouse Location Optimization (25% of budget)
+            warehouse_budget = request.budget * 0.25
+            logger.info(f"Step 3/4: Optimizing warehouse locations with ${warehouse_budget:,.0f}...")
+            warehouse_result = await self.warehouse_optimizer.optimize(
+                cells=analysis_result['cells'],
+                food_banks=optimization_result['locations'],
+                budget=warehouse_budget
+            )
+            
+            # Step 4: Validation
+            logger.info("Step 4/4: Validating proposed locations...")
             validation_result = await self.validator.validate(
                 locations=optimization_result['locations'],
+                warehouses=warehouse_result['warehouses'],
                 cells=analysis_result['cells'],
                 budget=request.budget
             )
@@ -127,6 +154,7 @@ class LocationOptimizationAgent:
             result = OptimizationResult(
                 status="success",
                 locations=validation_result['validated_locations'],
+                warehouses=validation_result['validated_warehouses'],
                 total_people_served=validation_result['total_impact'],
                 total_budget_used=validation_result['budget_used'],
                 coverage_percentage=validation_result['coverage_percentage'],
@@ -134,12 +162,14 @@ class LocationOptimizationAgent:
                     'efficiency_score': optimization_result['efficiency_score'],
                     'iterations': optimization_result['iterations'],
                     'convergence_time': optimization_result['convergence_time'],
+                    'warehouse_efficiency': warehouse_result['efficiency_score'],
+                    'warehouse_coverage': warehouse_result['coverage_percentage'],
                     'validation_adjustments': validation_result['adjustments_made']
                 },
                 timestamp=datetime.now().isoformat()
             )
             
-            logger.info(f"Optimization complete: {len(result.locations)} locations selected")
+            logger.info(f"Optimization complete: {len(result.locations)} food banks, {len(result.warehouses)} warehouses selected")
             return result
             
         except Exception as e:
@@ -147,6 +177,7 @@ class LocationOptimizationAgent:
             return OptimizationResult(
                 status="error",
                 locations=[],
+                warehouses=[],
                 total_people_served=0,
                 total_budget_used=0,
                 coverage_percentage=0,
@@ -459,14 +490,304 @@ class OptimizationAgent:
         from geopy.distance import geodesic
         return geodesic(coord1, coord2).miles
 
+class WarehouseOptimizationAgent:
+    """Sub-agent for optimizing warehouse locations based on food bank proximity and demand"""
+    
+    async def optimize(self, cells: List[Cell], food_banks: List[FoodBankLocation], budget: float) -> Dict[str, Any]:
+        """Optimize warehouse locations based on food bank locations and demand patterns"""
+        import time
+        
+        start_time = time.time()
+        
+        if not food_banks:
+            logger.warning("No food banks provided for warehouse optimization")
+            return {
+                'warehouses': [],
+                'efficiency_score': 0,
+                'coverage_percentage': 0,
+                'iterations': 0,
+                'convergence_time': 0,
+                'budget_remaining': budget
+            }
+        
+        # Calculate optimal warehouse locations based on food bank clustering
+        warehouse_candidates = self._identify_warehouse_candidates(food_banks, cells)
+        
+        # Score warehouse candidates
+        scored_warehouses = self._score_warehouse_candidates(warehouse_candidates, food_banks)
+        
+        # Select optimal warehouses within budget
+        selected_warehouses = self._select_optimal_warehouses(scored_warehouses, budget)
+        
+        # Calculate coverage metrics
+        coverage_percentage = self._calculate_coverage(selected_warehouses, food_banks)
+        
+        convergence_time = time.time() - start_time
+        budget_used = sum(w.setup_cost + (12 * w.operational_cost_monthly) for w in selected_warehouses)
+        
+        logger.info(f"Warehouse optimization complete: {len(selected_warehouses)} warehouses selected, "
+                   f"covering {coverage_percentage:.1f}% of food banks, "
+                   f"budget used: ${budget_used:,.0f}")
+        
+        return {
+            'warehouses': selected_warehouses,
+            'efficiency_score': np.mean([w.efficiency_score for w in selected_warehouses]) if selected_warehouses else 0,
+            'coverage_percentage': coverage_percentage,
+            'iterations': 1,
+            'convergence_time': convergence_time,
+            'budget_remaining': budget - budget_used
+        }
+    
+    def _identify_warehouse_candidates(self, food_banks: List[FoodBankLocation], cells: List[Cell]) -> List[Dict[str, Any]]:
+        """Identify potential warehouse locations based on food bank clusters with distance constraints"""
+        from geopy.distance import geodesic
+        
+        candidates = []
+        max_warehouse_radius = 2.0  # Reduced from 3.0 miles - warehouses should serve smaller areas
+        max_banks_per_warehouse = 3  # Maximum food banks one warehouse should serve
+        
+        # Strategy 1: Create multiple regional warehouses instead of one central one
+        # Use a simple clustering approach based on geographic proximity
+        unassigned_banks = food_banks.copy()
+        cluster_id = 0
+        
+        while unassigned_banks and cluster_id < 6:  # Maximum 6 potential warehouse locations
+            # Pick the food bank with the most nearby unassigned banks
+            best_anchor = None
+            best_nearby = []
+            best_score = 0
+            
+            for anchor_bank in unassigned_banks:
+                nearby_banks = [anchor_bank]  # Include the anchor itself
+                
+                for other_bank in unassigned_banks:
+                    if other_bank.geoid != anchor_bank.geoid:
+                        distance = geodesic((anchor_bank.lat, anchor_bank.lon), (other_bank.lat, other_bank.lon)).miles
+                        if distance <= max_warehouse_radius and len(nearby_banks) < max_banks_per_warehouse:
+                            nearby_banks.append(other_bank)
+                
+                # Score based on number of banks served and their total impact
+                total_impact = sum(bank.expected_impact for bank in nearby_banks)
+                score = len(nearby_banks) * 1000 + total_impact  # Prioritize serving more banks
+                
+                if score > best_score:
+                    best_score = score
+                    best_anchor = anchor_bank
+                    best_nearby = nearby_banks
+            
+            if best_anchor and len(best_nearby) >= 1:  # At least serve the anchor bank
+                # Calculate centroid of this cluster
+                cluster_lat = sum(bank.lat for bank in best_nearby) / len(best_nearby)
+                cluster_lon = sum(bank.lon for bank in best_nearby) / len(best_nearby)
+                
+                # Find the cell closest to this cluster centroid
+                closest_cell = None
+                min_distance = float('inf')
+                
+                for cell in cells:
+                    distance = geodesic((cluster_lat, cluster_lon), (cell.lat, cell.lon)).miles
+                    if distance < min_distance:
+                        min_distance = distance
+                        closest_cell = cell
+                
+                if closest_cell:
+                    candidates.append({
+                        'cell': closest_cell,
+                        'type': f'regional_cluster_{cluster_id}',
+                        'food_banks_served': [bank.geoid for bank in best_nearby],
+                        'coverage_score': len(best_nearby),
+                        'centroid_distance': min_distance,
+                        'cluster_impact': sum(bank.expected_impact for bank in best_nearby)
+                    })
+                    
+                    # Remove assigned banks from unassigned list
+                    for bank in best_nearby:
+                        if bank in unassigned_banks:
+                            unassigned_banks.remove(bank)
+                    
+                    cluster_id += 1
+            else:
+                break  # No more viable clusters
+        
+        # Strategy 2: Individual warehouses for remaining isolated food banks
+        for food_bank in unassigned_banks:
+            # Find the cell closest to this isolated food bank
+            closest_cell = None
+            min_distance = float('inf')
+            
+            for cell in cells:
+                distance = geodesic((food_bank.lat, food_bank.lon), (cell.lat, cell.lon)).miles
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_cell = cell
+            
+            if closest_cell:
+                candidates.append({
+                    'cell': closest_cell,
+                    'type': 'isolated',
+                    'food_banks_served': [food_bank.geoid],
+                    'coverage_score': 1,
+                    'centroid_distance': min_distance,
+                    'cluster_impact': food_bank.expected_impact
+                })
+        
+        return candidates
+    
+    def _score_warehouse_candidates(self, candidates: List[Dict[str, Any]], food_banks: List[FoodBankLocation]) -> List[Dict[str, Any]]:
+        """Score warehouse candidates based on efficiency metrics with cost optimization"""
+        scored_candidates = []
+        
+        for candidate in candidates:
+            cell = candidate['cell']
+            coverage_score = candidate['coverage_score']
+            cluster_impact = candidate.get('cluster_impact', 0)
+            
+            # Base efficiency on coverage and location quality, but penalize overly large warehouses
+            location_efficiency = max(0.1, 1.0 - (candidate['centroid_distance'] / 5.0))  # Normalize distance over 5 miles
+            
+            # Efficiency favors moderate coverage (2-3 food banks) over single or too many
+            if coverage_score == 1:
+                coverage_efficiency = 0.7  # Decent for isolated locations
+            elif coverage_score <= 3:
+                coverage_efficiency = 1.0  # Optimal range
+            else:
+                coverage_efficiency = 0.8 - (coverage_score - 3) * 0.1  # Penalize oversized warehouses
+            
+            # Combined efficiency score with distance weighting
+            efficiency = 0.4 * coverage_efficiency + 0.6 * location_efficiency
+            
+            # Calculate warehouse costs - smaller warehouses are more cost-effective per unit
+            capacity = sum(fb.expected_impact for fb in food_banks if fb.geoid in candidate['food_banks_served'])
+            
+            # More realistic warehouse costs - smaller fixed costs, higher variable costs
+            base_setup_cost = 120000  # $120k base setup cost (reduced)
+            # Economies of scale diminish for larger warehouses
+            capacity_cost_per_unit = 15 if coverage_score <= 2 else 20 if coverage_score <= 3 else 25
+            setup_cost = base_setup_cost + (capacity * capacity_cost_per_unit)
+            
+            # Operational costs scale with complexity of serving multiple locations
+            base_operations = 8000  # $8k base monthly operations
+            variable_operations = capacity * 2.0  # $2/unit/month
+            coordination_cost = (coverage_score - 1) * 1500  # $1.5k per additional food bank served
+            operational_cost = base_operations + variable_operations + coordination_cost
+            
+            # Distribution radius based on coverage
+            distribution_radius = min(2.5, 1.5 + (coverage_score - 1) * 0.3)  # 1.5-2.5 miles
+            
+            warehouse = WarehouseLocation(
+                geoid=f"warehouse_{cell.geoid}",
+                lat=cell.lat,
+                lon=cell.lon,
+                capacity=int(capacity),
+                distribution_radius=distribution_radius,
+                efficiency_score=efficiency,
+                setup_cost=setup_cost,
+                operational_cost_monthly=operational_cost,
+                food_banks_served=candidate['food_banks_served']
+            )
+            
+            # Score considers efficiency and cost-effectiveness
+            cost_effectiveness = cluster_impact / max(setup_cost, 1)  # Impact per setup dollar
+            final_score = efficiency * 0.7 + cost_effectiveness * 0.3
+            
+            scored_candidates.append({
+                'warehouse': warehouse,
+                'score': final_score,
+                'coverage': coverage_score,
+                'type': candidate['type'],
+                'cost_effectiveness': cost_effectiveness
+            })
+        
+        return sorted(scored_candidates, key=lambda x: x['score'], reverse=True)
+    
+    def _select_optimal_warehouses(self, scored_candidates: List[Dict[str, Any]], budget: float) -> List[WarehouseLocation]:
+        """Select optimal subset of warehouses within budget constraints, favoring multiple smaller warehouses"""
+        selected = []
+        remaining_budget = budget
+        served_food_banks = set()
+        
+        # First pass: Select warehouses that don't overlap with already served food banks
+        for candidate in scored_candidates:
+            warehouse = candidate['warehouse']
+            
+            # Calculate total cost (setup + 8 months operational for quicker ROI)
+            total_cost = warehouse.setup_cost + (8 * warehouse.operational_cost_monthly)
+            
+            if total_cost <= remaining_budget:
+                # Check if this warehouse serves any new food banks
+                new_banks_served = set(warehouse.food_banks_served) - served_food_banks
+                
+                # Accept if it serves new banks or if we don't have any warehouses yet
+                if new_banks_served or len(selected) == 0:
+                    selected.append(warehouse)
+                    remaining_budget -= total_cost
+                    served_food_banks.update(warehouse.food_banks_served)
+                    
+                    logger.info(f"Selected {candidate['type']} warehouse: capacity {warehouse.capacity}, "
+                               f"serves {len(warehouse.food_banks_served)} food banks, "
+                               f"cost: ${total_cost:,.0f}, remaining budget: ${remaining_budget:,.0f}")
+        
+        # Second pass: If we have budget left and unserved food banks, try to add more warehouses
+        all_food_banks = set()
+        for candidate in scored_candidates:
+            all_food_banks.update(candidate['warehouse'].food_banks_served)
+        
+        unserved_banks = all_food_banks - served_food_banks
+        
+        if unserved_banks and remaining_budget > 200000:  # If significant budget remains and unserved banks exist
+            logger.info(f"Second pass: {len(unserved_banks)} unserved food banks, ${remaining_budget:,.0f} budget remaining")
+            
+            for candidate in scored_candidates:
+                warehouse = candidate['warehouse']
+                
+                # Skip if already selected
+                if warehouse.geoid in [w.geoid for w in selected]:
+                    continue
+                
+                # Calculate cost with shorter operational period
+                total_cost = warehouse.setup_cost + (6 * warehouse.operational_cost_monthly)
+                
+                if total_cost <= remaining_budget:
+                    # Check if this warehouse serves any currently unserved banks
+                    banks_served_by_warehouse = set(warehouse.food_banks_served)
+                    new_coverage = banks_served_by_warehouse.intersection(unserved_banks)
+                    
+                    if new_coverage:
+                        selected.append(warehouse)
+                        remaining_budget -= total_cost
+                        served_food_banks.update(warehouse.food_banks_served)
+                        unserved_banks -= banks_served_by_warehouse
+                        
+                        logger.info(f"Second pass selected {candidate['type']} warehouse: "
+                                   f"serves {len(new_coverage)} additional food banks, "
+                                   f"cost: ${total_cost:,.0f}")
+                        
+                        # Stop if we've covered all food banks or budget is low
+                        if not unserved_banks or remaining_budget < 150000:
+                            break
+        
+        return selected
+    
+    def _calculate_coverage(self, warehouses: List[WarehouseLocation], food_banks: List[FoodBankLocation]) -> float:
+        """Calculate percentage of food banks covered by warehouses"""
+        if not food_banks:
+            return 0.0
+        
+        covered_banks = set()
+        for warehouse in warehouses:
+            covered_banks.update(warehouse.food_banks_served)
+        
+        return (len(covered_banks) / len(food_banks)) * 100.0
+
 class ValidationAgent:
     """Sub-agent for validating proposed locations"""
     
     async def validate(self, locations: List[FoodBankLocation], 
-                      cells: List[Cell], budget: float) -> Dict[str, Any]:
+                      warehouses: List[WarehouseLocation], cells: List[Cell], budget: float) -> Dict[str, Any]:
         """Validate feasibility of proposed locations"""
         adjustments_made = 0
         validated_locations = []
+        validated_warehouses = []
         
         # Calculate actual coverage
         covered_cells = set()
@@ -518,14 +839,59 @@ class ValidationAgent:
                     logger.error(f"total_cost type: {type(total_cost)}, value: {total_cost}")
                     raise
         
+        for warehouse in warehouses:
+            # Validate each warehouse
+            valid = True
+            
+            # Check if warehouse serves any cells
+            cells_served = 0
+            for cell in cells:
+                distance = self._calculate_distance(
+                    (warehouse.lat, warehouse.lon),
+                    (cell.lat, cell.lon)
+                )
+                if distance <= warehouse.distribution_radius:
+                    cells_served += 1
+                    covered_cells.add(cell.geoid)
+            
+            if cells_served == 0:
+                valid = False
+                adjustments_made += 1
+            
+            # Validate budget (use same calculation as optimization)
+            total_cost = warehouse.setup_cost + (12 * warehouse.operational_cost_monthly)
+            if budget_used + total_cost > budget:
+                # Try with 6 months if we have significant budget left
+                if budget - budget_used > warehouse.setup_cost * 2:
+                    total_cost = warehouse.setup_cost + (6 * warehouse.operational_cost_monthly)
+                    if budget_used + total_cost > budget:
+                        valid = False
+                        adjustments_made += 1
+                else:
+                    valid = False
+                    adjustments_made += 1
+            
+            if valid:
+                validated_warehouses.append(warehouse)
+                try:
+                    total_impact += total_cost
+                    budget_used += total_cost
+                except TypeError as e:
+                    logger.error(f"Type error in validation accumulation: {e}")
+                    logger.error(f"total_impact type: {type(total_impact)}, value: {total_impact}")
+                    logger.error(f"total_cost type: {type(total_cost)}, value: {total_cost}")
+                    logger.error(f"budget_used type: {type(budget_used)}, value: {budget_used}")
+                    raise
+        
         # Calculate coverage percentage
         coverage_percentage = (len(covered_cells) / len(cells)) * 100 if cells else 0
         
-        logger.info(f"Validation complete: {len(validated_locations)} locations validated, "
+        logger.info(f"Validation complete: {len(validated_locations)} food banks, {len(validated_warehouses)} warehouses validated, "
                    f"{adjustments_made} adjustments made")
         
         return {
             'validated_locations': validated_locations,
+            'validated_warehouses': validated_warehouses,
             'total_impact': total_impact,
             'budget_used': budget_used,
             'coverage_percentage': coverage_percentage,

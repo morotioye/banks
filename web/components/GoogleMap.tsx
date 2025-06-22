@@ -15,10 +15,23 @@ interface OptimizationLocation {
   operational_cost_monthly: number;
 }
 
+interface WarehouseLocation {
+  geoid: string;
+  lat: number;
+  lon: number;
+  capacity: number;
+  distribution_radius: number;
+  efficiency_score: number;
+  setup_cost: number;
+  operational_cost_monthly: number;
+  food_banks_served: string[];
+}
+
 interface MapProps {
   blocks: any[]
   visualizationMode: string
   foodBanks?: OptimizationLocation[]
+  warehouses?: WarehouseLocation[]
 }
 
 // Visualization mode configurations (same as in index.tsx)
@@ -135,11 +148,13 @@ const mapOptions = {
   ]
 }
 
-export default function GoogleMapComponent({ blocks, visualizationMode, foodBanks }: MapProps) {
+export default function GoogleMapComponent({ blocks, visualizationMode, foodBanks, warehouses }: MapProps) {
   const [map, setMap] = useState<google.maps.Map | null>(null)
   const [selectedBlock, setSelectedBlock] = useState<any>(null)
   const [selectedFoodBank, setSelectedFoodBank] = useState<OptimizationLocation | null>(null)
   const [selectedFoodBankIndex, setSelectedFoodBankIndex] = useState<number | null>(null)
+  const [selectedWarehouse, setSelectedWarehouse] = useState<WarehouseLocation | null>(null)
+  const [selectedWarehouseIndex, setSelectedWarehouseIndex] = useState<number | null>(null)
   const hasInitializedBounds = useRef<boolean>(false)
 
   const onLoad = useCallback((map: google.maps.Map) => {
@@ -294,6 +309,53 @@ export default function GoogleMapComponent({ blocks, visualizationMode, foodBank
             />
           )
         })}
+
+        {/* Render warehouse distribution circles */}
+        {warehouses?.map((warehouse, index) => (
+          <Circle
+            key={`warehouse-circle-${index}`}
+            center={{ lat: warehouse.lat, lng: warehouse.lon }}
+            radius={warehouse.distribution_radius * 1609.34} // Convert miles to meters
+            options={{
+              fillColor: '#D97706', // Amber color for warehouses
+              fillOpacity: 0.1,
+              strokeColor: '#D97706',
+              strokeOpacity: 0.6,
+              strokeWeight: 3,
+              draggable: false,
+              editable: false,
+            }}
+          />
+        ))}
+
+        {/* Render warehouse markers */}
+        {warehouses?.map((warehouse, index) => (
+          <Marker
+            key={`warehouse-marker-${index}`}
+            position={{ lat: warehouse.lat, lng: warehouse.lon }}
+            icon={{
+              path: 'M-12,-12 L12,-12 L12,12 L-12,12 Z', // Square shape for warehouses
+              scale: 1.5,
+              fillColor: '#D97706', // Amber color
+              fillOpacity: 0.9,
+              strokeColor: '#FFFFFF',
+              strokeWeight: 3,
+              anchor: new google.maps.Point(0, 0),
+              labelOrigin: new google.maps.Point(0, 0)
+            }}
+            label={{
+              text: 'W',
+              color: '#FFFFFF',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              fontFamily: 'Funnel Display, sans-serif'
+            }}
+            onClick={() => {
+              setSelectedWarehouse(warehouse)
+              setSelectedWarehouseIndex(index)
+            }}
+          />
+        ))}
 
         {/* Info window for selected block */}
         {selectedBlock && (
@@ -523,65 +585,251 @@ export default function GoogleMapComponent({ blocks, visualizationMode, foodBank
             </div>
           </InfoWindow>
         )}
+
+        {/* Info window for selected warehouse */}
+        {selectedWarehouse && selectedWarehouseIndex !== null && (
+          <InfoWindow
+            position={{ lat: selectedWarehouse.lat, lng: selectedWarehouse.lon }}
+            onCloseClick={() => {
+              setSelectedWarehouse(null)
+              setSelectedWarehouseIndex(null)
+            }}
+          >
+            <div className="font-funnel" style={{ minWidth: '320px' }}>
+              {/* Header */}
+              <div style={{ 
+                background: 'linear-gradient(135deg, #D97706 0%, #B45309 100%)', 
+                color: 'white', 
+                padding: '16px 20px', 
+                margin: '-14px -14px 16px -14px',
+                borderRadius: '8px 8px 0 0',
+                position: 'relative'
+              }}>
+                {/* Warehouse badge */}
+                <div style={{
+                  position: 'absolute',
+                  top: '12px',
+                  right: '16px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                  padding: '4px 12px',
+                  borderRadius: '20px',
+                  fontSize: '14px',
+                  fontWeight: '600'
+                }}>
+                  W{selectedWarehouseIndex + 1}
+                </div>
+                
+                <h3 style={{ fontSize: '18px', fontWeight: '700', margin: 0 }}>
+                  Supply Warehouse
+                </h3>
+                <p style={{ fontSize: '13px', margin: '4px 0 0 0', opacity: 0.9 }}>
+                  Distribution hub for food banks
+                </p>
+              </div>
+              
+              <div style={{ padding: '0 6px 16px 6px' }}>
+                {/* Capacity highlight */}
+                <div style={{ 
+                  background: 'linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)',
+                  border: '2px solid #FBBF24',
+                  padding: '16px', 
+                  borderRadius: '10px',
+                  marginBottom: '16px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '13px', color: '#92400E', marginBottom: '4px', fontWeight: '500' }}>
+                    Storage Capacity
+                  </div>
+                  <div style={{ fontSize: '28px', fontWeight: '800', color: '#92400E' }}>
+                    {formatNumber(selectedWarehouse.capacity)}
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#92400E', marginTop: '2px' }}>
+                    units of food
+                  </div>
+                </div>
+                
+                {/* Metrics grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+                  <div style={{ 
+                    backgroundColor: '#FAFAF9', 
+                    padding: '12px', 
+                    borderRadius: '8px',
+                    border: '1px solid #E7E5E4'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#78716C', marginBottom: '4px' }}>Distribution Radius</div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#292524' }}>
+                      {selectedWarehouse.distribution_radius.toFixed(1)} mi
+                    </div>
+                  </div>
+                  
+                  <div style={{ 
+                    backgroundColor: '#FAFAF9', 
+                    padding: '12px', 
+                    borderRadius: '8px',
+                    border: '1px solid #E7E5E4'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#78716C', marginBottom: '4px' }}>Efficiency Score</div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#292524' }}>
+                      {(selectedWarehouse.efficiency_score * 100).toFixed(1)}%
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Food banks served */}
+                <div style={{ 
+                  backgroundColor: '#F5F5F4', 
+                  padding: '14px', 
+                  borderRadius: '8px',
+                  marginBottom: '12px'
+                }}>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#57534E', marginBottom: '8px' }}>
+                    Services {selectedWarehouse.food_banks_served.length} Food Banks
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#78716C', lineHeight: '1.4' }}>
+                    This warehouse supplies food to {selectedWarehouse.food_banks_served.length} optimally located food banks within a {selectedWarehouse.distribution_radius.toFixed(1)}-mile radius.
+                  </div>
+                </div>
+                
+                {/* Cost breakdown */}
+                <div style={{ 
+                  backgroundColor: '#F5F5F4', 
+                  padding: '14px', 
+                  borderRadius: '8px',
+                  marginBottom: '12px'
+                }}>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#57534E', marginBottom: '10px' }}>
+                    Investment Required
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '13px', color: '#78716C' }}>Setup Cost</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#292524' }}>
+                      {formatCurrency(selectedWarehouse.setup_cost)}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '13px', color: '#78716C' }}>Monthly Operations</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#292524' }}>
+                      {formatCurrency(selectedWarehouse.operational_cost_monthly)}
+                    </span>
+                  </div>
+                </div>
+                
+                {/* Location coordinates */}
+                <div style={{ 
+                  textAlign: 'center',
+                  fontSize: '11px', 
+                  color: '#A8A29E',
+                  paddingTop: '8px',
+                  borderTop: '1px solid #E7E5E4'
+                }}>
+                  📍 {selectedWarehouse.lat.toFixed(4)}, {selectedWarehouse.lon.toFixed(4)}
+                </div>
+              </div>
+            </div>
+          </InfoWindow>
+        )}
       </GoogleMap>
 
-      {/* Food Bank Legend */}
-      {foodBanks && foodBanks.length > 0 && (
+      {/* Optimization Legend */}
+      {((foodBanks && foodBanks.length > 0) || (warehouses && warehouses.length > 0)) && (
         <div className="absolute bottom-6 left-6 bg-white rounded-xl p-4 shadow-lg border border-stone-200 z-50 font-funnel">
           <h4 className="text-sm font-semibold text-stone-700 mb-3">
-            Food Bank Locations
+            Optimization Results
           </h4>
           
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-3">
-              <div style={{
-                width: '36px',
-                height: '36px',
-                backgroundColor: '#2D5A2D',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontSize: '14px',
-                fontWeight: 'bold',
-                border: '3px solid white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-              }}>
-                1
-              </div>
+          <div className="flex flex-col gap-3">
+            {/* Food Banks Section */}
+            {foodBanks && foodBanks.length > 0 && (
               <div>
-                <div className="text-xs font-semibold text-stone-700">Highest Impact</div>
-                <div className="text-xs text-stone-500">Most people served</div>
+                <div className="text-xs font-semibold text-stone-600 mb-2">Food Banks</div>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-3">
+                    <div style={{
+                      width: '32px',
+                      height: '32px',
+                      backgroundColor: '#2D5A2D',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'white',
+                      fontSize: '13px',
+                      fontWeight: 'bold',
+                      border: '3px solid white',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                    }}>
+                      1
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-stone-700">Highest Impact</div>
+                      <div className="text-xs text-stone-500">Most people served</div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    <div style={{
+                      width: '24px',
+                      height: '24px',
+                      backgroundColor: '#2D5A2D',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'white',
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      border: '3px solid white',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                    }}>
+                      n
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-stone-700">Lower Impact</div>
+                      <div className="text-xs text-stone-500">Fewer people served</div>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-2 pt-2 border-t border-stone-200 text-xs text-stone-500">
+                    Circle size indicates relative impact
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
             
-            <div className="flex items-center gap-3">
-              <div style={{
-                width: '28px',
-                height: '28px',
-                backgroundColor: '#2D5A2D',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontSize: '12px',
-                fontWeight: 'bold',
-                border: '3px solid white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-              }}>
-                n
-              </div>
+            {/* Warehouses Section */}
+            {warehouses && warehouses.length > 0 && (
               <div>
-                <div className="text-xs font-semibold text-stone-700">Lower Impact</div>
-                <div className="text-xs text-stone-500">Fewer people served</div>
+                <div className="text-xs font-semibold text-stone-600 mb-2">Supply Warehouses</div>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-3">
+                    <div style={{
+                      width: '28px',
+                      height: '28px',
+                      backgroundColor: '#D97706',
+                      borderRadius: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'white',
+                      fontSize: '13px',
+                      fontWeight: 'bold',
+                      border: '3px solid white',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                    }}>
+                      W
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-stone-700">Distribution Hub</div>
+                      <div className="text-xs text-stone-500">Supplies multiple food banks</div>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-1 text-xs text-stone-500">
+                    Amber circles show distribution radius
+                  </div>
+                </div>
               </div>
-            </div>
-            
-            <div className="mt-2 pt-2 border-t border-stone-200 text-xs text-stone-500">
-              Circle size indicates relative impact
-            </div>
+            )}
           </div>
         </div>
       )}
