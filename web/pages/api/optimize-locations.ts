@@ -22,6 +22,17 @@ interface OptimizationResponse {
       setup_cost: number;
       operational_cost_monthly: number;
     }>;
+    warehouses: Array<{
+      geoid: string;
+      lat: number;
+      lon: number;
+      capacity: number;
+      distribution_radius: number;
+      efficiency_score: number;
+      setup_cost: number;
+      operational_cost_monthly: number;
+      food_banks_served: string[];
+    }>;
     total_people_served: number;
     total_budget_used: number;
     coverage_percentage: number;

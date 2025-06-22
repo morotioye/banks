@@ -92,17 +92,18 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
             
             await asyncio.sleep(0.5)  # Brief pause between agents
             
-            # Step 2: Optimization Agent
+            # Step 2: Food Bank Optimization Agent
             step2_start = time.time()
+            food_bank_budget = request.budget * 0.75
             self._send_update({
                 'type': 'agent_step',
-                'agent': 'Optimization Agent',
-                'step': 'location_optimization',
+                'agent': 'Food Bank Optimization Agent',
+                'step': 'foodbank_optimization',
                 'status': 'in_progress',
                 'message': 'Running advanced optimization algorithms to find optimal food bank locations...',
                 'input': {
                     'cells_to_analyze': len(analysis_result['cells']),
-                    'budget': request.budget,
+                    'budget': food_bank_budget,
                     'constraints': {
                         'max_locations': request.max_locations,
                         'min_distance_miles': request.min_distance_between_banks
@@ -112,7 +113,7 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
             
             optimization_result = await self.optimizer.optimize(
                 cells=analysis_result['cells'],
-                budget=request.budget,
+                budget=food_bank_budget,
                 max_locations=request.max_locations,
                 min_distance=request.min_distance_between_banks
             )
@@ -124,10 +125,10 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
             
             self._send_update({
                 'type': 'agent_step',
-                'agent': 'Optimization Agent',
-                'step': 'location_optimization',
+                'agent': 'Food Bank Optimization Agent',
+                'step': 'foodbank_optimization',
                 'status': 'completed',
-                'message': f'Identified {len(optimization_result["locations"])} optimal locations',
+                'message': f'Identified {len(optimization_result["locations"])} optimal food bank locations',
                 'output': {
                     'locations_found': len(optimization_result['locations']),
                     'efficiency_score': round(optimization_result['efficiency_score'], 3),
@@ -139,8 +140,51 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
             
             await asyncio.sleep(0.5)  # Brief pause between agents
             
-            # Step 3: Validation Agent
+            # Step 3: Warehouse Optimization Agent
             step3_start = time.time()
+            warehouse_budget = request.budget * 0.25
+            self._send_update({
+                'type': 'agent_step',
+                'agent': 'Warehouse Optimization Agent',
+                'step': 'warehouse_optimization',
+                'status': 'in_progress',
+                'message': 'Optimizing warehouse locations to supply food banks efficiently...',
+                'input': {
+                    'food_banks_to_serve': len(optimization_result['locations']),
+                    'budget': warehouse_budget,
+                    'distribution_radius': 3.0
+                }
+            })
+            
+            warehouse_result = await self.warehouse_optimizer.optimize(
+                cells=analysis_result['cells'],
+                food_banks=optimization_result['locations'],
+                budget=warehouse_budget
+            )
+            
+            # Ensure minimum step duration
+            elapsed = time.time() - step3_start
+            if elapsed < self.min_step_duration:
+                await asyncio.sleep(self.min_step_duration - elapsed)
+            
+            self._send_update({
+                'type': 'agent_step',
+                'agent': 'Warehouse Optimization Agent',
+                'step': 'warehouse_optimization',
+                'status': 'completed',
+                'message': f'Identified {len(warehouse_result["warehouses"])} optimal warehouse locations',
+                'output': {
+                    'warehouses_found': len(warehouse_result['warehouses']),
+                    'efficiency_score': round(warehouse_result['efficiency_score'], 3),
+                    'coverage_percentage': round(warehouse_result['coverage_percentage'], 1),
+                    'convergence_time': round(warehouse_result['convergence_time'], 2)
+                }
+            })
+            
+            await asyncio.sleep(0.5)  # Brief pause between agents
+            
+            # Step 4: Validation Agent
+            step4_start = time.time()
             self._send_update({
                 'type': 'agent_step',
                 'agent': 'Validation Agent',
@@ -149,6 +193,7 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
                 'message': 'Validating proposed locations for feasibility and coverage...',
                 'input': {
                     'locations_to_validate': len(optimization_result['locations']),
+                    'warehouses_to_validate': len(warehouse_result['warehouses']),
                     'budget_constraint': request.budget,
                     'coverage_analysis': True
                 }
@@ -156,12 +201,13 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
             
             validation_result = await self.validator.validate(
                 locations=optimization_result['locations'],
+                warehouses=warehouse_result['warehouses'],
                 cells=analysis_result['cells'],
                 budget=request.budget
             )
             
             # Ensure minimum step duration
-            elapsed = time.time() - step3_start
+            elapsed = time.time() - step4_start
             if elapsed < self.min_step_duration:
                 await asyncio.sleep(self.min_step_duration - elapsed)
             
@@ -192,7 +238,7 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
                 'message': 'Optimization complete! Compiling final results...',
                 'output': {
                     'total_time': round(time.time() - start_time, 2),
-                    'agents_used': 3,
+                    'agents_used': 4,
                     'success': True
                 }
             })
@@ -201,6 +247,7 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
             result = {
                 'status': 'success',
                 'locations': [self._location_to_dict(loc) for loc in validation_result['validated_locations']],
+                'warehouses': [self._warehouse_to_dict(wh) for wh in validation_result['validated_warehouses']],
                 'total_people_served': validation_result['total_impact'],
                 'total_budget_used': validation_result['budget_used'],
                 'coverage_percentage': validation_result['coverage_percentage'],
@@ -208,6 +255,8 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
                     'efficiency_score': optimization_result['efficiency_score'],
                     'iterations': optimization_result['iterations'],
                     'convergence_time': optimization_result['convergence_time'],
+                    'warehouse_efficiency': warehouse_result['efficiency_score'],
+                    'warehouse_coverage': warehouse_result['coverage_percentage'],
                     'validation_adjustments': validation_result['adjustments_made']
                 },
                 'timestamp': datetime.now().isoformat()
@@ -249,11 +298,26 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
             'operational_cost_monthly': location.operational_cost_monthly
         }
     
+    def _warehouse_to_dict(self, warehouse) -> Dict[str, Any]:
+        """Convert WarehouseLocation to dict"""
+        return {
+            'geoid': warehouse.geoid,
+            'lat': warehouse.lat,
+            'lon': warehouse.lon,
+            'capacity': warehouse.capacity,
+            'distribution_radius': warehouse.distribution_radius,
+            'efficiency_score': warehouse.efficiency_score,
+            'setup_cost': warehouse.setup_cost,
+            'operational_cost_monthly': warehouse.operational_cost_monthly,
+            'food_banks_served': warehouse.food_banks_served
+        }
+    
     def _create_error_result(self, error_message: str) -> Dict[str, Any]:
         """Create an error result"""
         return {
             'status': 'error',
             'locations': [],
+            'warehouses': [],
             'total_people_served': 0,
             'total_budget_used': 0,
             'coverage_percentage': 0,

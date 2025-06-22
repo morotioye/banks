@@ -1486,6 +1486,7 @@ export default function Home() {
               blocks={blocks} 
               visualizationMode={visualizationMode} 
               foodBanks={optimizationResult?.data?.locations}
+              warehouses={optimizationResult?.data?.warehouses}
             />
 
             {/* Loading indicator */}

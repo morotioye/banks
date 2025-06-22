@@ -614,6 +614,7 @@ export default function RegionPage() {
             blocks={blocks} 
             visualizationMode={visualizationMode} 
             foodBanks={optimizationResult?.data?.locations}
+            warehouses={optimizationResult?.data?.warehouses}
           />
 
           {/* Optimization Panel */}
