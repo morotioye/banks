@@ -318,10 +318,10 @@ export default function GoogleMapComponent({ blocks, visualizationMode, foodBank
             radius={warehouse.distribution_radius * 1609.34} // Convert miles to meters
             options={{
               fillColor: '#D97706', // Amber color for warehouses
-              fillOpacity: 0.1,
-              strokeColor: '#D97706',
+              fillOpacity: 0.08, // More subtle fill for larger areas
+              strokeColor: '#B45309', // Darker amber for better visibility on larger circles
               strokeOpacity: 0.6,
-              strokeWeight: 3,
+              strokeWeight: 2,
               draggable: false,
               editable: false,
             }}
