@@ -65,10 +65,14 @@ export default async function handler(
       })
     }
 
+    // Generate the collection name that would be created
+    const collectionName = `r_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
+
     res.status(201).json({ 
       success: true,
       message: 'Domain created successfully',
-      output 
+      output,
+      regionId: collectionName
     })
   })
 } 

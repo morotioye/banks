@@ -708,11 +708,7 @@ export default function Home() {
               
               {/* New Region Button */}
               <button
-                onClick={() => {
-                  setSelectedRegion('')
-                  setIsCreatingRegion(true)
-                  setLoadingRegions(false) // Clear loading state when switching to create mode
-                }}
+                onClick={() => window.location.href = '/new'}
                 style={{
                   padding: '16px',
                   backgroundColor: 'hsl(140, 20%, 95%)',
@@ -810,7 +806,7 @@ export default function Home() {
                 >
                   <div 
                     style={{ flex: 1 }}
-                    onClick={() => setSelectedRegion(region.collection_name)}
+                    onClick={() => window.location.href = `/${region.collection_name}`}
                   >
                     <h3 style={{ fontSize: '15px', fontWeight: '600', margin: 0, color: '#2c3e50', fontFamily: '"Funnel Display", system-ui, sans-serif' }}>
                       {region.name || region.domain_name || region.collection_name.replace(/^r_/, '').replace(/_/g, ' ')}
@@ -901,11 +897,7 @@ export default function Home() {
               
               {/* New Region Button */}
               <button
-                onClick={() => {
-                  setSelectedRegion('')
-                  setIsCreatingRegion(true)
-                  setLoadingRegions(false) // Clear loading state when switching to create mode
-                }}
+                onClick={() => window.location.href = '/new'}
                 style={{
                   padding: '16px',
                   backgroundColor: 'hsl(140, 20%, 95%)',
