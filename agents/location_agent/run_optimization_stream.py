@@ -92,18 +92,61 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
             
             await asyncio.sleep(0.5)  # Brief pause between agents
             
-            # Step 2: Food Bank Optimization Agent
+            # Step 2: Warehouse Optimization Agent (25% budget)
             step2_start = time.time()
+            warehouse_budget = request.budget * 0.25
+            self._send_update({
+                'type': 'agent_step',
+                'agent': 'Warehouse Optimization Agent',
+                'step': 'warehouse_optimization',
+                'status': 'in_progress',
+                'message': 'Optimizing warehouse locations for regional distribution...',
+                'input': {
+                    'budget': warehouse_budget,
+                    'strategy': 'quadrant-based placement'
+                }
+            })
+            
+            warehouse_result = await self.warehouse_optimizer.optimize_warehouses_simple(
+                cells=analysis_result['cells'],
+                budget=warehouse_budget
+            )
+            
+            # Ensure minimum step duration
+            elapsed = time.time() - step2_start
+            if elapsed < self.min_step_duration:
+                await asyncio.sleep(self.min_step_duration - elapsed)
+            
+            self._send_update({
+                'type': 'agent_step',
+                'agent': 'Warehouse Optimization Agent',
+                'step': 'warehouse_optimization',
+                'status': 'completed',
+                'message': f'Identified {len(warehouse_result["warehouses"])} optimal warehouse locations',
+                'output': {
+                    'warehouses_found': len(warehouse_result['warehouses']),
+                    'efficiency_score': round(warehouse_result['efficiency_score'], 3),
+                    'coverage_percentage': round(warehouse_result['coverage_percentage'], 1),
+                    'convergence_time': round(warehouse_result['convergence_time'], 2),
+                    'budget_remaining': warehouse_result['budget_remaining']
+                }
+            })
+            
+            await asyncio.sleep(0.5)  # Brief pause between agents
+            
+            # Step 3: Food Bank Optimization within warehouse coverage
+            step3_start = time.time()
             food_bank_budget = request.budget * 0.75
             self._send_update({
                 'type': 'agent_step',
                 'agent': 'Food Bank Optimization Agent',
                 'step': 'foodbank_optimization',
                 'status': 'in_progress',
-                'message': 'Running advanced optimization algorithms to find optimal food bank locations...',
+                'message': 'Optimizing food bank locations within warehouse coverage areas...',
                 'input': {
                     'cells_to_analyze': len(analysis_result['cells']),
                     'budget': food_bank_budget,
+                    'warehouses': len(warehouse_result['warehouses']),
                     'constraints': {
                         'max_locations': request.max_locations,
                         'min_distance_miles': request.min_distance_between_banks
@@ -111,15 +154,16 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
                 }
             })
             
-            optimization_result = await self.optimizer.optimize(
+            optimization_result = await self.optimizer.optimize_within_warehouse_coverage(
                 cells=analysis_result['cells'],
+                warehouses=warehouse_result['warehouses'],
                 budget=food_bank_budget,
                 max_locations=request.max_locations,
                 min_distance=request.min_distance_between_banks
             )
             
             # Ensure minimum step duration
-            elapsed = time.time() - step2_start
+            elapsed = time.time() - step3_start
             if elapsed < self.min_step_duration:
                 await asyncio.sleep(self.min_step_duration - elapsed)
             
@@ -135,49 +179,6 @@ class StreamingLocationOptimizationAgent(LocationOptimizationAgent):
                     'iterations': optimization_result['iterations'],
                     'convergence_time': round(optimization_result['convergence_time'], 2),
                     'budget_remaining': optimization_result['budget_remaining']
-                }
-            })
-            
-            await asyncio.sleep(0.5)  # Brief pause between agents
-            
-            # Step 3: Warehouse Optimization Agent
-            step3_start = time.time()
-            warehouse_budget = request.budget * 0.25
-            self._send_update({
-                'type': 'agent_step',
-                'agent': 'Warehouse Optimization Agent',
-                'step': 'warehouse_optimization',
-                'status': 'in_progress',
-                'message': 'Optimizing warehouse locations to supply food banks efficiently...',
-                'input': {
-                    'food_banks_to_serve': len(optimization_result['locations']),
-                    'budget': warehouse_budget,
-                    'distribution_radius': 3.0
-                }
-            })
-            
-            warehouse_result = await self.warehouse_optimizer.optimize(
-                cells=analysis_result['cells'],
-                food_banks=optimization_result['locations'],
-                budget=warehouse_budget
-            )
-            
-            # Ensure minimum step duration
-            elapsed = time.time() - step3_start
-            if elapsed < self.min_step_duration:
-                await asyncio.sleep(self.min_step_duration - elapsed)
-            
-            self._send_update({
-                'type': 'agent_step',
-                'agent': 'Warehouse Optimization Agent',
-                'step': 'warehouse_optimization',
-                'status': 'completed',
-                'message': f'Identified {len(warehouse_result["warehouses"])} optimal warehouse locations',
-                'output': {
-                    'warehouses_found': len(warehouse_result['warehouses']),
-                    'efficiency_score': round(warehouse_result['efficiency_score'], 3),
-                    'coverage_percentage': round(warehouse_result['coverage_percentage'], 1),
-                    'convergence_time': round(warehouse_result['convergence_time'], 2)
                 }
             })
             
