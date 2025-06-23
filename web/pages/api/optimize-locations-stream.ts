@@ -2,153 +2,232 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { spawn } from 'child_process';
 import path from 'path';
 
-interface OptimizationRequest {
-  domain: string;
-  budget: number;
-  maxLocations?: number;
-  minDistanceBetweenBanks?: number;
-}
-
-interface WarehouseLocation {
-  geoid: string;
-  lat: number;
-  lon: number;
-  capacity: number;
-  distribution_radius: number;
-  efficiency_score: number;
-  setup_cost: number;
-  operational_cost_monthly: number;
-  food_banks_served: string[];
-}
-
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', ['POST']);
-    return res.status(405).end(`Method ${req.method} Not Allowed`);
+  console.log('🚀 [optimize-locations-stream] Request received:', {
+    method: req.method,
+    query: req.query,
+    timestamp: new Date().toISOString()
+  });
+
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const { domain, budget } = req.query;
+
+  if (!domain || !budget) {
+    console.error('❌ [optimize-locations-stream] Missing required parameters');
+    return res.status(400).json({ error: 'Domain and budget are required' });
+  }
+
+  console.log('📊 [optimize-locations-stream] Starting optimization:', {
+    domain,
+    budget,
+    timestamp: new Date().toISOString()
+  });
+
+  // Set up SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
+
+  // Send initial message
+  const initialMessage = JSON.stringify({ type: 'phase', phase: 'Starting optimization...' });
+  res.write(`data: ${initialMessage}\n\n`);
+  console.log('📤 [optimize-locations-stream] Sent initial message:', initialMessage);
+
+  // Keep connection alive
+  const keepAliveInterval = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 30000);
+
   try {
-    const { domain, budget, minDistanceBetweenBanks = 0.3 } = req.body as OptimizationRequest;
+    // Path to the ADK Python script
+    const scriptPath = path.join(process.cwd(), '..', 'agents', 'location_agent', 'run_adk_stream.py');
+    console.log('🐍 [optimize-locations-stream] Python script path:', scriptPath);
     
-    // Don't set an artificial limit - let the algorithm maximize impact
-    // Only use maxLocations if explicitly provided, otherwise set a high limit
-    const maxLocations = req.body.maxLocations || 1000;
-
-    // Validate input
-    if (!domain || !budget) {
-      return res.status(400).json({
-        status: 'error',
-        error: 'Domain and budget are required'
-      });
-    }
-
-    if (budget < 500000) {
-      return res.status(400).json({
-        status: 'error',
-        error: 'Minimum budget is $500,000'
-      });
-    }
-
-    // Set up SSE headers
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    });
-
-    // Send initial connection message
-    res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
-
-    // Run Python optimization script with streaming support
-    const pythonPath = process.env.PYTHON_PATH || 'python3';
-    const possiblePaths = [
-      path.join(process.cwd(), '..', 'agents', 'location_agent', 'run_optimization_stream.py'),
-      path.join(process.cwd(), 'agents', 'location_agent', 'run_optimization_stream.py'),
-      path.resolve(__dirname, '../../../../agents/location_agent/run_optimization_stream.py')
-    ];
-    
-    let scriptPath = possiblePaths[0];
-    const fs = require('fs');
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        scriptPath = p;
-        break;
-      }
-    }
-    
-    console.log('Using Python script path:', scriptPath);
-    
-    const pythonProcess = spawn(pythonPath, [
+    // Arguments for the Python script
+    const args = [
       scriptPath,
-      '--domain', domain,
+      '--domain', domain.toString(),
       '--budget', budget.toString(),
-      '--max-locations', maxLocations.toString(),
-      '--min-distance', minDistanceBetweenBanks.toString()
-    ], {
+      '--stream'
+    ];
+
+    console.log('🔧 [optimize-locations-stream] Spawning Python process with args:', args);
+
+    // Spawn Python process
+    const pythonProcess = spawn('python3', args, {
       env: { ...process.env, PYTHONUNBUFFERED: '1' }
     });
 
-    let lastAgentStep: any = null;
-    let minStepDuration = 500; // Reduced from 2000ms to 500ms
+    let resultBuffer = '';
+    let isCollectingResult = false;
+    let messageCount = 0;
+    let buffer = '';
 
     pythonProcess.stdout.on('data', (data) => {
-      const lines = data.toString().split('\n').filter((line: string) => line.trim());
+      const dataStr = data.toString();
+      console.log('📥 [optimize-locations-stream] Raw Python stdout:', dataStr.substring(0, 200) + '...');
       
-      for (const line of lines) {
+      // Add to buffer
+      buffer += dataStr;
+      
+      // Process all complete lines
+      let newlineIndex;
+      while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.substring(0, newlineIndex);
+        buffer = buffer.substring(newlineIndex + 1);
+        
+        if (!line.trim()) continue;
+        
         try {
-          const message = JSON.parse(line as string);
-          
-          if (message.type === 'agent_step') {
-            // Store the step and send it after minimum duration
-            lastAgentStep = message;
-            
-            setTimeout(() => {
-              res.write(`data: ${JSON.stringify(message)}\n\n`);
-            }, minStepDuration);
-          } else {
-            // Send other messages immediately
-            res.write(`data: ${JSON.stringify(message)}\n\n`);
+          // Check if this is the start of final result
+          if (line.includes('FINAL_RESULT_START')) {
+            console.log('🎯 [optimize-locations-stream] Starting to collect final result');
+            isCollectingResult = true;
+            resultBuffer = '';
+            continue;
           }
-        } catch (e) {
-          // If not JSON, it might be a log message
-          console.log('Python output:', line);
+          
+          // Check if this is the end of final result
+          if (line.includes('FINAL_RESULT_END')) {
+            console.log('✅ [optimize-locations-stream] Final result collected, parsing...');
+            isCollectingResult = false;
+            try {
+              const finalResult = JSON.parse(resultBuffer);
+              const resultMessage = JSON.stringify({ type: 'result', result: finalResult });
+              res.write(`data: ${resultMessage}\n\n`);
+              console.log('📤 [optimize-locations-stream] Sent final result:', {
+                status: finalResult.status,
+                locations: finalResult.locations?.length,
+                warehouses: finalResult.warehouses?.length,
+                timestamp: new Date().toISOString()
+              });
+            } catch (e) {
+              console.error('❌ [optimize-locations-stream] Error parsing final result:', e);
+              console.error('Result buffer was:', resultBuffer);
+            }
+            continue;
+          }
+          
+          // If collecting result, add to buffer
+          if (isCollectingResult) {
+            resultBuffer += line;
+            continue;
+          }
+          
+          // Skip non-JSON lines (like warnings)
+          if (!line.startsWith('{')) {
+            console.log('⚠️ [optimize-locations-stream] Skipping non-JSON line:', line.substring(0, 100));
+            continue;
+          }
+          
+          // Parse streaming messages
+          const message = JSON.parse(line);
+          messageCount++;
+          console.log(`📨 [optimize-locations-stream] Message #${messageCount}:`, {
+            type: message.type,
+            content: message.type === 'agent_message' ? message.content : 
+                    message.type === 'function_call' ? `Calling ${message.function}` :
+                    message.type === 'function_result' ? `Result from ${message.function}` :
+                    message.type === 'phase' ? message.phase :
+                    'Other message'
+          });
+          
+          // Send the appropriate SSE message
+          if (message.type === 'agent_message') {
+            res.write(`data: ${JSON.stringify({
+              type: 'agent_message',
+              message: message.content
+            })}\n\n`);
+          } else if (message.type === 'function_call') {
+            res.write(`data: ${JSON.stringify({
+              type: 'function_call',
+              function_name: message.function,
+              args: message.args
+            })}\n\n`);
+          } else if (message.type === 'function_result') {
+            res.write(`data: ${JSON.stringify({
+              type: 'function_result',
+              function_name: message.function,
+              result: message.result
+            })}\n\n`);
+          } else if (message.type === 'phase') {
+            res.write(`data: ${JSON.stringify({
+              type: 'phase',
+              phase: message.phase
+            })}\n\n`);
+          } else if (message.type === 'error') {
+            res.write(`data: ${JSON.stringify({
+              type: 'error',
+              error: message.error
+            })}\n\n`);
+          }
+          
+          // Messages are automatically flushed by Next.js
+        } catch (parseError) {
+          console.error('⚠️ [optimize-locations-stream] Error parsing line:', parseError);
+          console.error('Line was:', line);
         }
       }
     });
 
     pythonProcess.stderr.on('data', (data) => {
-      console.error('Python error:', data.toString());
-      res.write(`data: ${JSON.stringify({ 
-        type: 'error', 
-        message: data.toString() 
-      })}\n\n`);
+      const errorStr = data.toString();
+      console.error('🔴 [optimize-locations-stream] Python stderr:', errorStr);
+      
+      // Only send critical errors to client
+      if (errorStr.includes('ERROR') && !errorStr.includes('INFO')) {
+        res.write(`data: ${JSON.stringify({
+          type: 'error',
+          error: errorStr
+        })}\n\n`);
+      }
     });
 
     pythonProcess.on('close', (code) => {
-      if (code === 0) {
-        res.write(`data: ${JSON.stringify({ type: 'complete' })}\n\n`);
-      } else {
-        res.write(`data: ${JSON.stringify({ 
-          type: 'error', 
-          message: 'Optimization process failed' 
+      clearInterval(keepAliveInterval);
+      console.log(`🏁 [optimize-locations-stream] Python process closed with code ${code}`);
+      
+      if (code !== 0) {
+        res.write(`data: ${JSON.stringify({
+          type: 'error',
+          error: `Process exited with code ${code}`
         })}\n\n`);
       }
       res.end();
     });
 
+    pythonProcess.on('error', (error) => {
+      clearInterval(keepAliveInterval);
+      console.error('💥 [optimize-locations-stream] Failed to start Python process:', error);
+      res.write(`data: ${JSON.stringify({
+        type: 'error',
+        error: 'Failed to start optimization process'
+      })}\n\n`);
+      res.end();
+    });
+
     // Handle client disconnect
     req.on('close', () => {
+      clearInterval(keepAliveInterval);
+      console.log('👋 [optimize-locations-stream] Client disconnected');
       pythonProcess.kill();
     });
 
   } catch (error) {
-    console.error('Optimization error:', error);
-    res.write(`data: ${JSON.stringify({ 
-      type: 'error', 
-      message: 'Internal server error' 
+    clearInterval(keepAliveInterval);
+    console.error('💥 [optimize-locations-stream] Optimization error:', error);
+    res.write(`data: ${JSON.stringify({
+      type: 'error',
+      error: 'Internal server error'
     })}\n\n`);
     res.end();
   }

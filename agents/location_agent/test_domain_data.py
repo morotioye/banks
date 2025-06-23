@@ -11,13 +11,70 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-MONGO_URI = os.getenv('MONGO_DB_URI', 'mongodb://localhost:27017/')
-DB_NAME = os.getenv('DB_NAME', 'food_insecurity')
+# Get MongoDB Atlas connection details from environment
+mongo_uri = os.getenv('MONGO_DB_URI', 'mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority')
+db_name = os.getenv('DB_NAME', 'testbank')
+
+print(f"Connecting to MongoDB Atlas...")
+print(f"Database: {db_name}")
+
+try:
+    # Connect to MongoDB Atlas
+    client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+    
+    # Test the connection
+    client.server_info()
+    print("✅ Successfully connected to MongoDB Atlas!")
+    
+    db = client[db_name]
+    
+    # List all collections
+    collections = db.list_collection_names()
+    print(f"\nCollections in {db_name}: {collections}")
+    
+    # Find domain collections (those starting with "d_")
+    domain_collections = [c for c in collections if c.startswith("d_")]
+    print(f"\nDomain collections: {domain_collections}")
+    
+    if domain_collections:
+        # Examine the first domain collection
+        collection_name = domain_collections[0]
+        collection = db[collection_name]
+        
+        print(f"\nExamining collection: {collection_name}")
+        print(f"Document count: {collection.count_documents({})}")
+        
+        # Get a sample document
+        sample_doc = collection.find_one()
+        if sample_doc:
+            print(f"\nSample document structure:")
+            for key in sample_doc.keys():
+                print(f"  - {key}: {type(sample_doc[key]).__name__}")
+        
+        # Check for specific fields we need
+        if sample_doc:
+            print(f"\nChecking for required fields:")
+            required_fields = ['cell_id', 'centroid', 'population', 'food_insecurity_score']
+            for field in required_fields:
+                if field in sample_doc:
+                    print(f"  ✅ {field}: {sample_doc[field]}")
+                else:
+                    print(f"  ❌ {field}: NOT FOUND")
+    
+    # Close the connection
+    client.close()
+    
+except Exception as e:
+    print(f"❌ Error connecting to MongoDB Atlas: {e}")
+    print("\nMake sure to:")
+    print("1. Set MONGO_DB_URI in your .env file")
+    print("2. Add your IP address to MongoDB Atlas Network Access")
+    print("3. Check your username and password")
 
 def test_domain(domain_name):
     """Test a specific domain's data format"""
-    client = MongoClient(MONGO_URI)
-    db = client[DB_NAME]
+    client = MongoClient(mongo_uri)
+    db = client[db_name]
     
     collection_name = f"d_{domain_name}"
     if collection_name not in db.list_collection_names():
@@ -82,8 +139,8 @@ if __name__ == "__main__":
         test_domain(args.domain)
     else:
         # Test all domains
-        client = MongoClient(MONGO_URI)
-        db = client[DB_NAME]
+        client = MongoClient(mongo_uri)
+        db = client[db_name]
         domain_collections = [c for c in db.list_collection_names() if c.startswith('d_')]
         
         print(f"Found {len(domain_collections)} domains to test")
