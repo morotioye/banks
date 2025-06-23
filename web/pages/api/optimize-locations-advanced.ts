@@ -2,13 +2,17 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { spawn } from 'child_process';
 import path from 'path';
 
-interface OptimizationRequest {
+interface AdvancedOptimizationRequest {
   domain: string;
   budget: number;
   maxLocations?: number;
   minDistanceBetweenBanks?: number;
-  warehouseBudgetRatio?: number;
-  maxWarehouses?: number;
+  strategy?: 'greedy' | 'kmeans' | 'multi_objective';
+  populationWeight?: number;
+  povertyWeight?: number;
+  snapWeight?: number;
+  vehicleAccessWeight?: number;
+  geographicWeight?: number;
 }
 
 interface OptimizationResponse {
@@ -23,22 +27,13 @@ interface OptimizationResponse {
       efficiency_score: number;
       setup_cost: number;
       operational_cost_monthly: number;
-    }>;
-    warehouses: Array<{
-      geoid: string;
-      lat: number;
-      lon: number;
-      capacity: number;
-      distribution_radius: number;
-      efficiency_score: number;
-      setup_cost: number;
-      operational_cost_monthly: number;
-      storage_cost_per_unit: number;
+      coverage_area?: number;
+      population_served?: number;
+      need_served?: number;
+      accessibility_impact?: number;
     }>;
     total_people_served: number;
     total_budget_used: number;
-    food_bank_budget_used: number;
-    warehouse_budget_used: number;
     coverage_percentage: number;
     optimization_metrics: Record<string, any>;
     timestamp: string;
@@ -65,9 +60,13 @@ export default async function handler(
         budget, 
         maxLocations = 10, 
         minDistanceBetweenBanks = 0.5,
-        warehouseBudgetRatio = 0.3,
-        maxWarehouses = 5
-      } = req.body as OptimizationRequest;
+        strategy = 'multi_objective',
+        populationWeight = 0.25,
+        povertyWeight = 0.25,
+        snapWeight = 0.20,
+        vehicleAccessWeight = 0.15,
+        geographicWeight = 0.15
+      } = req.body as AdvancedOptimizationRequest;
 
       // Validate input
       if (!domain || !budget) {
@@ -84,26 +83,28 @@ export default async function handler(
         });
       }
 
-      if (warehouseBudgetRatio < 0 || warehouseBudgetRatio > 0.5) {
+      // Validate weights
+      const totalWeight = populationWeight + povertyWeight + snapWeight + vehicleAccessWeight + geographicWeight;
+      if (Math.abs(totalWeight - 1.0) > 0.01) {
         return res.status(400).json({
           status: 'error',
-          error: 'Warehouse budget ratio must be between 0 and 0.5 (50%)'
+          error: `Weights must sum to 1.0 (current sum: ${totalWeight.toFixed(2)})`
         });
       }
 
       // Generate job ID
-      const jobId = `opt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const jobId = `adv_opt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
       // Initialize job tracking
       optimizationJobs.set(jobId, { status: 'in_progress' });
 
-      // Run Python optimization script
+      // Run Python advanced optimization script
       const pythonPath = process.env.PYTHON_PATH || 'python3';
       // Handle both development and production paths
       const possiblePaths = [
-        path.join(process.cwd(), '..', 'agents', 'location_agent', 'run_optimization.py'),
-        path.join(process.cwd(), 'agents', 'location_agent', 'run_optimization.py'),
-        path.resolve(__dirname, '../../../../agents/location_agent/run_optimization.py')
+        path.join(process.cwd(), '..', 'agents', 'location_agent', 'run_advanced_optimization.py'),
+        path.join(process.cwd(), 'agents', 'location_agent', 'run_advanced_optimization.py'),
+        path.resolve(__dirname, '../../../../agents/location_agent/run_advanced_optimization.py')
       ];
       
       let scriptPath = possiblePaths[0];
@@ -115,7 +116,7 @@ export default async function handler(
         }
       }
       
-      console.log('Using Python script path:', scriptPath);
+      console.log('Using advanced Python script path:', scriptPath);
       
       const pythonProcess = spawn(pythonPath, [
         scriptPath,
@@ -123,8 +124,12 @@ export default async function handler(
         '--budget', budget.toString(),
         '--max-locations', maxLocations.toString(),
         '--min-distance', minDistanceBetweenBanks.toString(),
-        '--warehouse-budget-ratio', warehouseBudgetRatio.toString(),
-        '--max-warehouses', maxWarehouses.toString()
+        '--strategy', strategy,
+        '--population-weight', populationWeight.toString(),
+        '--poverty-weight', povertyWeight.toString(),
+        '--snap-weight', snapWeight.toString(),
+        '--vehicle-access-weight', vehicleAccessWeight.toString(),
+        '--geographic-weight', geographicWeight.toString()
       ]);
 
       let outputData = '';
@@ -151,6 +156,8 @@ export default async function handler(
           } catch (parseError) {
             job.status = 'failed';
             job.error = 'Failed to parse optimization results';
+            console.error('Parse error:', parseError);
+            console.error('Output data:', outputData);
           }
         } else {
           job.status = 'failed';
@@ -165,7 +172,7 @@ export default async function handler(
       });
 
     } catch (error) {
-      console.error('Optimization error:', error);
+      console.error('Advanced optimization error:', error);
       return res.status(500).json({
         status: 'error',
         error: 'Internal server error'

@@ -21,6 +21,7 @@ interface OptimizationResult {
     coverage_percentage: number;
     optimization_metrics: Record<string, any>;
     timestamp: string;
+    warehouses?: OptimizationLocation[];
   };
   error?: string;
 }
@@ -398,6 +399,35 @@ export default function OptimizationFloatingPanel({
           </div>
         ) : result?.data ? (
           <>
+            {/* Warehouses Overview */}
+            <div style={{
+              backgroundColor: '#e0e7ff',
+              borderRadius: '12px',
+              padding: '16px',
+              marginBottom: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div>
+                <p style={{ fontSize: '14px', color: '#1e40af', margin: '0 0 4px 0' }}>
+                  Warehouses
+                </p>
+                <p style={{ fontSize: '24px', fontWeight: '700', color: '#1e3a8a', margin: 0 }}>
+                  {result.data.warehouses ? result.data.warehouses.length : 0}
+                </p>
+              </div>
+              <span style={{ display: 'inline-block', width: 40, height: 40 }}>
+                <svg width="32" height="32" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="6" y="20" width="36" height="18" rx="3" fill="#1E40AF" stroke="#1E3A8A" strokeWidth="2"/>
+                  <rect x="14" y="28" width="8" height="10" rx="1.5" fill="#3B82F6"/>
+                  <rect x="26" y="28" width="8" height="10" rx="1.5" fill="#3B82F6"/>
+                  <polygon points="24,6 4,20 44,20" fill="#60A5FA" stroke="#1E3A8A" strokeWidth="2"/>
+                  <rect x="20" y="34" width="8" height="4" rx="1" fill="#1E40AF"/>
+                </svg>
+              </span>
+            </div>
+
             {/* Budget Overview */}
             <div style={{
               backgroundColor: '#ecf8ff',

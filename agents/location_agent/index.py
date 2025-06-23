@@ -15,6 +15,7 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import multiprocessing
+from geopy.distance import geodesic
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +35,8 @@ class OptimizationRequest:
     budget: float
     max_locations: int = 1000  # High default to not artificially limit
     min_distance_between_banks: float = 0.3  # miles - allow closer spacing for urban areas
+    warehouse_budget_ratio: float = 0.3  # 30% of budget for warehouses by default
+    max_warehouses: int = 3  # Maximum number of warehouses
 
 @dataclass
 class Cell:
@@ -62,12 +65,28 @@ class FoodBankLocation:
     operational_cost_monthly: float
 
 @dataclass
+class WarehouseLocation:
+    """Optimized warehouse location"""
+    geoid: str
+    lat: float
+    lon: float
+    capacity: int  # Storage capacity in units
+    distribution_radius: float  # miles
+    efficiency_score: float
+    setup_cost: float
+    operational_cost_monthly: float
+    storage_cost_per_unit: float
+
+@dataclass
 class OptimizationResult:
     """Complete optimization result"""
     status: str
     locations: List[FoodBankLocation]
+    warehouses: List[WarehouseLocation]
     total_people_served: int
     total_budget_used: float
+    food_bank_budget_used: float
+    warehouse_budget_used: float
     coverage_percentage: float
     optimization_metrics: Dict[str, Any]
     timestamp: str
@@ -89,66 +108,84 @@ class LocationOptimizationAgent:
         Main orchestration method for location optimization
         """
         logger.info(f"Starting location optimization for domain: {request.domain}")
-        
         try:
             # Step 1: Data Analysis
-            logger.info("Step 1/3: Analyzing population and food insecurity data...")
+            logger.info("Step 1/4: Analyzing population and food insecurity data...")
             analysis_result = await self.data_analyzer.analyze_domain(request.domain)
-            
             if not analysis_result['cells']:
                 return OptimizationResult(
                     status="error",
                     locations=[],
+                    warehouses=[],
                     total_people_served=0,
                     total_budget_used=0,
+                    food_bank_budget_used=0,
+                    warehouse_budget_used=0,
                     coverage_percentage=0,
                     optimization_metrics={},
                     timestamp=datetime.now().isoformat()
                 )
-            
-            # Step 2: Location Optimization
-            logger.info("Step 2/3: Optimizing food bank locations...")
-            optimization_result = await self.optimizer.optimize(
+            # Calculate budget allocation
+            warehouse_budget = request.budget * request.warehouse_budget_ratio
+            food_bank_budget = request.budget - warehouse_budget
+            logger.info(f"Budget allocation: Food banks: ${food_bank_budget:,.2f}, Warehouses: ${warehouse_budget:,.2f}")
+            # Step 2: Warehouse Location Optimization (first)
+            logger.info("Step 2/4: Optimizing warehouse locations...")
+            warehouse_result = await self.optimizer.optimize_warehouses(
                 cells=analysis_result['cells'],
-                budget=request.budget,
-                max_locations=request.max_locations,
-                min_distance=request.min_distance_between_banks
+                food_banks=[],  # No food banks yet
+                budget=warehouse_budget,
+                max_warehouses=request.max_warehouses
             )
-            
-            # Step 3: Validation
-            logger.info("Step 3/3: Validating proposed locations...")
+            # Step 3: Food Bank Location Optimization (must be near a warehouse)
+            logger.info("Step 3/4: Optimizing food bank locations around warehouses...")
+            food_bank_result = await self.optimizer.optimize_food_banks(
+                cells=analysis_result['cells'],
+                budget=food_bank_budget,
+                max_locations=request.max_locations,
+                min_distance=request.min_distance_between_banks,
+                warehouses=warehouse_result['warehouses'],
+                max_distance_from_warehouse=5.0  # Default 5 miles
+            )
+            # Step 4: Validation
+            logger.info("Step 4/4: Validating proposed locations...")
             validation_result = await self.validator.validate(
-                locations=optimization_result['locations'],
+                locations=food_bank_result['locations'],
+                warehouses=warehouse_result['warehouses'],
                 cells=analysis_result['cells'],
                 budget=request.budget
             )
-            
             # Compile final result
             result = OptimizationResult(
                 status="success",
                 locations=validation_result['validated_locations'],
+                warehouses=validation_result['validated_warehouses'],
                 total_people_served=validation_result['total_impact'],
                 total_budget_used=validation_result['budget_used'],
+                food_bank_budget_used=validation_result['food_bank_budget_used'],
+                warehouse_budget_used=validation_result['warehouse_budget_used'],
                 coverage_percentage=validation_result['coverage_percentage'],
                 optimization_metrics={
-                    'efficiency_score': optimization_result['efficiency_score'],
-                    'iterations': optimization_result['iterations'],
-                    'convergence_time': optimization_result['convergence_time'],
+                    'efficiency_score': food_bank_result['efficiency_score'],
+                    'warehouse_efficiency_score': warehouse_result['efficiency_score'],
+                    'iterations': food_bank_result['iterations'],
+                    'convergence_time': food_bank_result['convergence_time'],
                     'validation_adjustments': validation_result['adjustments_made']
                 },
                 timestamp=datetime.now().isoformat()
             )
-            
-            logger.info(f"Optimization complete: {len(result.locations)} locations selected")
+            logger.info(f"Optimization complete: {len(result.locations)} food banks, {len(result.warehouses)} warehouses")
             return result
-            
         except Exception as e:
             logger.error(f"Optimization failed: {str(e)}")
             return OptimizationResult(
                 status="error",
                 locations=[],
+                warehouses=[],
                 total_people_served=0,
                 total_budget_used=0,
+                food_bank_budget_used=0,
+                warehouse_budget_used=0,
                 coverage_percentage=0,
                 optimization_metrics={'error': str(e)},
                 timestamp=datetime.now().isoformat()
@@ -278,38 +315,38 @@ class DataAnalysisAgent:
 class OptimizationAgent:
     """Sub-agent for optimizing food bank locations"""
     
-    async def optimize(self, cells: List[Cell], budget: float, 
-                      max_locations: int, min_distance: float) -> Dict[str, Any]:
-        """Optimize food bank locations using advanced algorithms"""
+    async def optimize_food_banks(self, cells: List[Cell], budget: float, 
+                              max_locations: int, min_distance: float, warehouses: Optional[List[WarehouseLocation]] = None, max_distance_from_warehouse: float = 5.0) -> Dict[str, Any]:
+        """Optimize food bank locations using advanced algorithms, only within max_distance_from_warehouse of a warehouse"""
         import time
-        
         start_time = time.time()
-        
+        # Filter cells to only those within max_distance_from_warehouse of any warehouse
+        if warehouses:
+            filtered_cells = []
+            for cell in cells:
+                for warehouse in warehouses:
+                    distance = self._calculate_distance((cell.lat, cell.lon), (warehouse.lat, warehouse.lon))
+                    if distance <= max_distance_from_warehouse:
+                        filtered_cells.append(cell)
+                        break
+        else:
+            filtered_cells = cells
         # Use multiprocessing to calculate efficiency scores in parallel
         num_workers = min(multiprocessing.cpu_count(), 8)  # Cap at 8 workers
-        
-        # Split cells into chunks for parallel processing
-        chunk_size = max(1, len(cells) // num_workers)
-        cell_chunks = [cells[i:i + chunk_size] for i in range(0, len(cells), chunk_size)]
-        
+        chunk_size = max(1, len(filtered_cells) // num_workers)
+        cell_chunks = [filtered_cells[i:i + chunk_size] for i in range(0, len(filtered_cells), chunk_size)]
         scored_cells = []
-        
-        # Process cells in parallel
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            # Submit all chunks for processing
             future_to_chunk = {
                 executor.submit(self._score_cells_chunk, chunk): chunk 
                 for chunk in cell_chunks
             }
-            
-            # Collect results as they complete
             for future in as_completed(future_to_chunk):
                 try:
                     chunk_results = future.result()
                     scored_cells.extend(chunk_results)
                 except Exception as e:
                     logger.error(f"Error processing chunk: {e}")
-        
         # Sort by efficiency
         scored_cells.sort(key=lambda x: x['efficiency'], reverse=True)
         
@@ -456,23 +493,149 @@ class OptimizationAgent:
     
     def _calculate_distance(self, coord1: tuple, coord2: tuple) -> float:
         """Calculate distance between two coordinates in miles"""
-        from geopy.distance import geodesic
+        return geodesic(coord1, coord2).miles
+
+    async def optimize_warehouses(self, cells: List[Cell], food_banks: List[FoodBankLocation], 
+                              budget: float, max_warehouses: int) -> Dict[str, Any]:
+        """Optimize warehouse locations using advanced algorithms (one-time setup cost only)"""
+        import time
+        start_time = time.time()
+        num_workers = min(multiprocessing.cpu_count(), 8)
+        chunk_size = max(1, len(cells) // num_workers)
+        cell_chunks = [cells[i:i + chunk_size] for i in range(0, len(cells), chunk_size)]
+        scored_cells = []
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            future_to_chunk = {
+                executor.submit(self._score_warehouse_cells_chunk, chunk, food_banks): chunk 
+                for chunk in cell_chunks
+            }
+            for future in as_completed(future_to_chunk):
+                try:
+                    chunk_results = future.result()
+                    scored_cells.extend(chunk_results)
+                except Exception as e:
+                    logger.error(f"Error processing warehouse chunk: {e}")
+        scored_cells.sort(key=lambda x: x['efficiency'], reverse=True)
+        selected_warehouses = []
+        remaining_budget = budget
+        total_capacity = 0
+        used_cells = set()
+        made_progress = True
+        iteration = 0
+        while made_progress and len(selected_warehouses) < max_warehouses and iteration < 100:
+            made_progress = False
+            iteration += 1
+            for i, scored_cell in enumerate(scored_cells):
+                if i in used_cells:
+                    continue
+                cell_data = scored_cell['cell']
+                too_close = False
+                for warehouse in selected_warehouses:
+                    distance = self._calculate_distance(
+                        (warehouse.lat, warehouse.lon),
+                        (cell_data.lat, cell_data.lon)
+                    )
+                    if distance < 8.0:
+                        too_close = True
+                        break
+                if too_close:
+                    continue
+                # Only use setup cost for budget
+                total_cost = scored_cell['setup_cost']
+                if total_cost > remaining_budget:
+                    continue
+                warehouse = WarehouseLocation(
+                    geoid=cell_data.geoid,
+                    lat=cell_data.lat,
+                    lon=cell_data.lon,
+                    capacity=scored_cell['capacity'],
+                    distribution_radius=8.0,
+                    efficiency_score=scored_cell['efficiency'],
+                    setup_cost=scored_cell['setup_cost'],
+                    operational_cost_monthly=0.0,  # No operational cost
+                    storage_cost_per_unit=scored_cell['storage_cost_per_unit']
+                )
+                selected_warehouses.append(warehouse)
+                remaining_budget -= total_cost
+                total_capacity += scored_cell['capacity']
+                used_cells.add(i)
+                made_progress = True
+                logger.info(f"Added warehouse {len(selected_warehouses)}: {cell_data.geoid}, "
+                           f"capacity: {scored_cell['capacity']:,}, "
+                           f"cost: ${total_cost:,.0f}, "
+                           f"remaining budget: ${remaining_budget:,.0f}")
+        convergence_time = time.time() - start_time
+        logger.info(f"Warehouse optimization complete after {iteration} iterations. "
+                   f"Selected {len(selected_warehouses)} warehouses, "
+                   f"total capacity: {total_capacity:,}, "
+                   f"budget used: ${budget - remaining_budget:,.0f}")
+        return {
+            'warehouses': selected_warehouses,
+            'efficiency_score': np.mean([w.efficiency_score for w in selected_warehouses]) if selected_warehouses else 0,
+            'iterations': iteration,
+            'convergence_time': convergence_time,
+            'budget_remaining': remaining_budget,
+            'total_capacity': total_capacity
+        }
+
+    @staticmethod
+    def _score_warehouse_cells_chunk(cells_chunk: List[Cell], food_banks: List[FoodBankLocation]) -> List[Dict[str, Any]]:
+        """Score a chunk of cells for warehouse placement (for parallel processing)"""
+        scored_cells = []
+        for cell in cells_chunk:
+            if cell.population == 0:
+                continue
+            # Efficiency: prioritize high poverty, low vehicle access, and need
+            poverty_factor = float(cell.poverty_rate)  # Higher is better
+            accessibility_factor = 1 - float(cell.vehicle_access_rate)  # Higher is better (lower access)
+            need_factor = float(cell.need) / 1000  # Normalize need
+            efficiency = (
+                0.5 * poverty_factor +
+                0.3 * accessibility_factor +
+                0.2 * need_factor
+            )
+            # Calculate warehouse costs and capacity
+            base_capacity = 5000  # Base capacity in units
+            population_density = cell.population / 1000
+            capacity_multiplier = 1 + (population_density * 0.1)
+            capacity = int(base_capacity * capacity_multiplier)
+            setup_cost = 100000 + (capacity * 2)  # $100k base + $2 per unit
+            operational_cost = 0  # No operational cost
+            storage_cost_per_unit = 0.10  # $0.10 per unit per month
+            scored_cells.append({
+                'cell': cell,
+                'efficiency': efficiency,
+                'capacity': capacity,
+                'setup_cost': setup_cost,
+                'operational_cost': operational_cost,
+                'storage_cost_per_unit': storage_cost_per_unit,
+                'poverty_factor': poverty_factor,
+                'accessibility_factor': accessibility_factor,
+                'need_factor': need_factor
+            })
+        return scored_cells
+
+    def _calculate_distance(self, coord1: tuple, coord2: tuple) -> float:
+        """Calculate distance between two coordinates in miles"""
         return geodesic(coord1, coord2).miles
 
 class ValidationAgent:
     """Sub-agent for validating proposed locations"""
     
     async def validate(self, locations: List[FoodBankLocation], 
-                      cells: List[Cell], budget: float) -> Dict[str, Any]:
+                      warehouses: List[WarehouseLocation], cells: List[Cell], budget: float) -> Dict[str, Any]:
         """Validate feasibility of proposed locations"""
         adjustments_made = 0
         validated_locations = []
+        validated_warehouses = []
         
         # Calculate actual coverage
         covered_cells = set()
         total_impact = 0
-        budget_used = 0
+        food_bank_budget_used = 0
+        warehouse_budget_used = 0
         
+        # Validate food banks
         for location in locations:
             # Validate each location
             valid = True
@@ -494,11 +657,11 @@ class ValidationAgent:
             
             # Validate budget (use same calculation as optimization)
             total_cost = location.setup_cost + (12 * location.operational_cost_monthly)
-            if budget_used + total_cost > budget:
+            if food_bank_budget_used + total_cost > budget * 0.7:  # 70% of budget for food banks
                 # Try with 6 months if we have significant budget left
-                if budget - budget_used > location.setup_cost * 2:
+                if budget * 0.7 - food_bank_budget_used > location.setup_cost * 2:
                     total_cost = location.setup_cost + (6 * location.operational_cost_monthly)
-                    if budget_used + total_cost > budget:
+                    if food_bank_budget_used + total_cost > budget * 0.7:
                         valid = False
                         adjustments_made += 1
                 else:
@@ -509,33 +672,75 @@ class ValidationAgent:
                 validated_locations.append(location)
                 try:
                     total_impact += location.expected_impact
-                    budget_used += total_cost
+                    food_bank_budget_used += total_cost
                 except TypeError as e:
                     logger.error(f"Type error in validation accumulation: {e}")
                     logger.error(f"total_impact type: {type(total_impact)}, value: {total_impact}")
                     logger.error(f"location.expected_impact type: {type(location.expected_impact)}, value: {location.expected_impact}")
-                    logger.error(f"budget_used type: {type(budget_used)}, value: {budget_used}")
+                    raise
+        
+        # Validate warehouses
+        for warehouse in warehouses:
+            # Validate each warehouse
+            valid = True
+            
+            # Check if warehouse serves any cells
+            cells_served = 0
+            for cell in cells:
+                distance = self._calculate_distance(
+                    (warehouse.lat, warehouse.lon),
+                    (cell.lat, cell.lon)
+                )
+                if distance <= warehouse.distribution_radius:
+                    cells_served += 1
+                    covered_cells.add(cell.geoid)
+            
+            if cells_served == 0:
+                valid = False
+                adjustments_made += 1
+            
+            # Validate budget (use same calculation as optimization)
+            total_cost = warehouse.setup_cost + (12 * warehouse.operational_cost_monthly)
+            if warehouse_budget_used + total_cost > budget * 0.3:  # 30% of budget for warehouses
+                # Try with 6 months if we have significant budget left
+                if budget * 0.3 - warehouse_budget_used > warehouse.setup_cost * 2:
+                    total_cost = warehouse.setup_cost + (6 * warehouse.operational_cost_monthly)
+                    if warehouse_budget_used + total_cost > budget * 0.3:
+                        valid = False
+                        adjustments_made += 1
+                else:
+                    valid = False
+                    adjustments_made += 1
+            
+            if valid:
+                validated_warehouses.append(warehouse)
+                try:
+                    warehouse_budget_used += total_cost
+                except TypeError as e:
+                    logger.error(f"Type error in validation accumulation: {e}")
+                    logger.error(f"warehouse_budget_used type: {type(warehouse_budget_used)}, value: {warehouse_budget_used}")
                     logger.error(f"total_cost type: {type(total_cost)}, value: {total_cost}")
                     raise
         
         # Calculate coverage percentage
         coverage_percentage = (len(covered_cells) / len(cells)) * 100 if cells else 0
         
-        logger.info(f"Validation complete: {len(validated_locations)} locations validated, "
+        logger.info(f"Validation complete: {len(validated_locations)} food banks, {len(validated_warehouses)} warehouses validated, "
                    f"{adjustments_made} adjustments made")
         
         return {
             'validated_locations': validated_locations,
+            'validated_warehouses': validated_warehouses,
             'total_impact': total_impact,
-            'budget_used': budget_used,
+            'budget_used': food_bank_budget_used + warehouse_budget_used,
+            'food_bank_budget_used': food_bank_budget_used,
+            'warehouse_budget_used': warehouse_budget_used,
             'coverage_percentage': coverage_percentage,
-            'adjustments_made': adjustments_made,
-            'cells_covered': len(covered_cells)
+            'adjustments_made': adjustments_made
         }
     
     def _calculate_distance(self, coord1: tuple, coord2: tuple) -> float:
         """Calculate distance between two coordinates in miles"""
-        from geopy.distance import geodesic
         return geodesic(coord1, coord2).miles
 
 # Export main agent

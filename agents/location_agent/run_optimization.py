@@ -31,6 +31,8 @@ async def main():
     parser.add_argument('--budget', type=float, required=True, help='Budget for optimization')
     parser.add_argument('--max-locations', type=int, default=10, help='Maximum number of locations')
     parser.add_argument('--min-distance', type=float, default=0.5, help='Minimum distance between banks (miles)')
+    parser.add_argument('--warehouse-budget-ratio', type=float, default=0.3, help='Ratio of budget for warehouses (0.0-0.5)')
+    parser.add_argument('--max-warehouses', type=int, default=5, help='Maximum number of warehouses')
     
     args = parser.parse_args()
     
@@ -40,7 +42,9 @@ async def main():
             domain=args.domain,
             budget=args.budget,
             max_locations=args.max_locations,
-            min_distance_between_banks=args.min_distance
+            min_distance_between_banks=args.min_distance,
+            warehouse_budget_ratio=args.warehouse_budget_ratio,
+            max_warehouses=args.max_warehouses
         )
         
         # Initialize agent and run optimization

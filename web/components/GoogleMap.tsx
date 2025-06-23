@@ -15,10 +15,23 @@ interface OptimizationLocation {
   operational_cost_monthly: number;
 }
 
+interface WarehouseLocation {
+  geoid: string;
+  lat: number;
+  lon: number;
+  capacity: number;
+  distribution_radius: number;
+  efficiency_score: number;
+  setup_cost: number;
+  operational_cost_monthly: number;
+  storage_cost_per_unit: number;
+}
+
 interface MapProps {
   blocks: any[]
   visualizationMode: string
   foodBanks?: OptimizationLocation[]
+  warehouses?: WarehouseLocation[]
 }
 
 // Visualization mode configurations (same as in index.tsx)
@@ -135,11 +148,13 @@ const mapOptions = {
   ]
 }
 
-export default function GoogleMapComponent({ blocks, visualizationMode, foodBanks }: MapProps) {
+export default function GoogleMapComponent({ blocks, visualizationMode, foodBanks, warehouses }: MapProps) {
   const [map, setMap] = useState<google.maps.Map | null>(null)
   const [selectedBlock, setSelectedBlock] = useState<any>(null)
   const [selectedFoodBank, setSelectedFoodBank] = useState<OptimizationLocation | null>(null)
   const [selectedFoodBankIndex, setSelectedFoodBankIndex] = useState<number | null>(null)
+  const [selectedWarehouse, setSelectedWarehouse] = useState<WarehouseLocation | null>(null)
+  const [selectedWarehouseIndex, setSelectedWarehouseIndex] = useState<number | null>(null)
   const hasInitializedBounds = useRef<boolean>(false)
 
   const onLoad = useCallback((map: google.maps.Map) => {
@@ -290,6 +305,69 @@ export default function GoogleMapComponent({ blocks, visualizationMode, foodBank
               onClick={() => {
                 setSelectedFoodBank(foodBank)
                 setSelectedFoodBankIndex(index)
+              }}
+            />
+          )
+        })}
+
+        {/* Render warehouse coverage circles */}
+        {warehouses?.map((warehouse, index) => (
+          <Circle
+            key={`warehouse-circle-${index}`}
+            center={{ lat: warehouse.lat, lng: warehouse.lon }}
+            radius={warehouse.distribution_radius * 1000} // Convert km to meters
+            options={{
+              fillColor: '#1E40AF', // Blue
+              fillOpacity: 0.12,
+              strokeColor: '#1E40AF',
+              strokeOpacity: 0.3,
+              strokeWeight: 2,
+              draggable: false,
+              editable: false,
+            }}
+          />
+        ))}
+
+        {/* Render warehouse markers */}
+        {warehouses?.map((warehouse, index) => {
+          // Calculate warehouse marker scale based on capacity
+          const capacities = warehouses.map(w => w.capacity)
+          const minCapacity = Math.min(...capacities)
+          const maxCapacity = Math.max(...capacities)
+          const capacityRange = maxCapacity - minCapacity || 1
+          const scale = 32 + ((warehouse.capacity - minCapacity) / capacityRange) * 16 // Scale from 32 to 48 px
+          // Use a custom SVG image for the warehouse icon
+          const warehouseSvgUrl =
+            'data:image/svg+xml;utf8,' +
+            encodeURIComponent(`
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="6" y="20" width="36" height="18" rx="3" fill="#1E40AF" stroke="#1E3A8A" stroke-width="2"/>
+                <rect x="14" y="28" width="8" height="10" rx="1.5" fill="#3B82F6"/>
+                <rect x="26" y="28" width="8" height="10" rx="1.5" fill="#3B82F6"/>
+                <polygon points="24,6 4,20 44,20" fill="#60A5FA" stroke="#1E3A8A" stroke-width="2"/>
+                <rect x="20" y="34" width="8" height="4" rx="1" fill="#1E40AF"/>
+              </svg>
+            `);
+          return (
+            <Marker
+              key={`warehouse-marker-${index}`}
+              position={{ lat: warehouse.lat, lng: warehouse.lon }}
+              icon={{
+                url: warehouseSvgUrl,
+                scaledSize: new google.maps.Size(scale, scale),
+                anchor: new google.maps.Point(scale / 2, scale),
+                labelOrigin: new google.maps.Point(scale / 2, scale + 8)
+              }}
+              label={{
+                text: 'Warehouse',
+                color: '#1E40AF',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                fontFamily: 'Funnel Display, sans-serif'
+              }}
+              onClick={() => {
+                setSelectedWarehouse(warehouse)
+                setSelectedWarehouseIndex(index)
               }}
             />
           )
@@ -523,6 +601,96 @@ export default function GoogleMapComponent({ blocks, visualizationMode, foodBank
             </div>
           </InfoWindow>
         )}
+
+        {/* Info window for selected warehouse */}
+        {selectedWarehouse && selectedWarehouseIndex !== null && (
+          <InfoWindow
+            position={{ lat: selectedWarehouse.lat, lng: selectedWarehouse.lon }}
+            onCloseClick={() => {
+              setSelectedWarehouse(null)
+              setSelectedWarehouseIndex(null)
+            }}
+          >
+            <div className="font-funnel" style={{ minWidth: '300px' }}>
+              <div style={{
+                background: 'linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%)',
+                color: 'white',
+                padding: '16px 20px',
+                margin: '-14px -14px 16px -14px',
+                borderRadius: '8px 8px 0 0',
+                position: 'relative'
+              }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '700', margin: 0 }}>
+                  Warehouse
+                </h3>
+                <p style={{ fontSize: '13px', margin: '4px 0 0 0', opacity: 0.9 }}>
+                  Central distribution hub
+                </p>
+              </div>
+              <div style={{ padding: '0 6px 16px 6px' }}>
+                <div style={{
+                  background: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
+                  border: '2px solid #60A5FA',
+                  padding: '16px',
+                  borderRadius: '10px',
+                  marginBottom: '16px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '12px', color: '#1E40AF', marginBottom: '4px' }}>Capacity</div>
+                  <div style={{ fontSize: '20px', fontWeight: '700', color: '#1E40AF' }}>
+                    {selectedWarehouse.capacity.toLocaleString()} units
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div style={{
+                    backgroundColor: '#FAFAF9',
+                    padding: '10px',
+                    borderRadius: '6px',
+                    border: '1px solid #E7E5E4'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#78716C', marginBottom: '2px' }}>Distribution Radius</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#292524' }}>
+                      {selectedWarehouse.distribution_radius} miles
+                    </div>
+                  </div>
+                  <div style={{
+                    backgroundColor: '#FAFAF9',
+                    padding: '10px',
+                    borderRadius: '6px',
+                    border: '1px solid #E7E5E4'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#78716C', marginBottom: '2px' }}>Efficiency Score</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#292524' }}>
+                      {selectedWarehouse.efficiency_score.toFixed(2)}
+                    </div>
+                  </div>
+                  <div style={{
+                    backgroundColor: '#FAFAF9',
+                    padding: '10px',
+                    borderRadius: '6px',
+                    border: '1px solid #E7E5E4'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#78716C', marginBottom: '2px' }}>Setup Cost</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#292524' }}>
+                      ${selectedWarehouse.setup_cost.toLocaleString()}
+                    </div>
+                  </div>
+                  <div style={{
+                    backgroundColor: '#FAFAF9',
+                    padding: '10px',
+                    borderRadius: '6px',
+                    border: '1px solid #E7E5E4'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#78716C', marginBottom: '2px' }}>Monthly Op. Cost</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#292524' }}>
+                      ${selectedWarehouse.operational_cost_monthly.toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </InfoWindow>
+        )}
       </GoogleMap>
 
       {/* Food Bank Legend */}
@@ -581,6 +749,67 @@ export default function GoogleMapComponent({ blocks, visualizationMode, foodBank
             
             <div className="mt-2 pt-2 border-t border-stone-200 text-xs text-stone-500">
               Circle size indicates relative impact
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Warehouse Legend */}
+      {warehouses && warehouses.length > 0 && (
+        <div className="absolute bottom-6 right-6 bg-white rounded-xl p-4 shadow-lg border border-stone-200 z-50 font-funnel">
+          <h4 className="text-sm font-semibold text-stone-700 mb-3">
+            Warehouse Locations
+          </h4>
+          
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-3">
+              <div style={{
+                width: '36px',
+                height: '36px',
+                backgroundColor: '#1E40AF',
+                borderRadius: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                border: '3px solid white',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+              }}>
+                W
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-stone-700">Large Capacity</div>
+                <div className="text-xs text-stone-500">More storage units</div>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <div style={{
+                width: '28px',
+                height: '28px',
+                backgroundColor: '#1E40AF',
+                borderRadius: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                border: '3px solid white',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+              }}>
+                W
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-stone-700">Smaller Capacity</div>
+                <div className="text-xs text-stone-500">Fewer storage units</div>
+              </div>
+            </div>
+            
+            <div className="mt-2 pt-2 border-t border-stone-200 text-xs text-stone-500">
+              Square size indicates relative capacity
             </div>
           </div>
         </div>

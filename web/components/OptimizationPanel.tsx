@@ -21,6 +21,7 @@ interface OptimizationResult {
     coverage_percentage: number;
     optimization_metrics: Record<string, any>;
     timestamp: string;
+    warehouses?: OptimizationLocation[];
   };
   error?: string;
   jobId?: string;
@@ -196,7 +197,29 @@ export default function OptimizationPanel({ domain, initialBudget, onOptimizatio
       {result?.data && (
         <div className="space-y-6">
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            {/* Warehouses Card */}
+            <div className="bg-blue-100 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Warehouses</p>
+                  <p className="text-2xl font-bold text-blue-800">
+                    {result.data.warehouses ? result.data.warehouses.length : 0}
+                  </p>
+                </div>
+                {/* Simple warehouse SVG icon */}
+                <span className="inline-block w-8 h-8">
+                  <svg width="32" height="32" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="6" y="20" width="36" height="18" rx="3" fill="#1E40AF" stroke="#1E3A8A" strokeWidth="2"/>
+                    <rect x="14" y="28" width="8" height="10" rx="1.5" fill="#3B82F6"/>
+                    <rect x="26" y="28" width="8" height="10" rx="1.5" fill="#3B82F6"/>
+                    <polygon points="24,6 4,20 44,20" fill="#60A5FA" stroke="#1E3A8A" strokeWidth="2"/>
+                    <rect x="20" y="34" width="8" height="4" rx="1" fill="#1E40AF"/>
+                  </svg>
+                </span>
+              </div>
+            </div>
+            {/* Locations Card */}
             <div className="bg-blue-50 rounded-lg p-4">
               <div className="flex items-center justify-between">
                 <div>
