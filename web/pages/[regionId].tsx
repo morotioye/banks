@@ -193,94 +193,17 @@ export default function RegionPage() {
     const budgetToUse = budgetOverride || optimizationBudget || lastValidBudget
     const budgetValue = parseFloat(budgetToUse)
     
-    if (!budgetToUse || isNaN(budgetValue) || budgetValue < 500000) {
+    if (!budgetToUse || isNaN(budgetValue) || budgetValue < 100000) {
       setOptimizationResult({
         status: 'error',
-        error: `Budget must be at least $500,000 (current: $${budgetValue || 0})`
+        error: `Budget must be at least $100,000 (current: $${budgetValue || 0})`
       })
       return
     }
 
-    setIsOptimizing(true)
-    setOptimizationResult(null)
-    setAgentSteps([])
-
-    try {
-      const regionName = region.collection_name.startsWith('d_') 
-        ? region.collection_name.substring(2) 
-        : region.collection_name
-
-      const response = await fetch('/api/optimize-locations-stream', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          domain: regionName,
-          budget: budgetValue,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to start optimization')
-      }
-
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-
-      if (!reader) {
-        throw new Error('No response body')
-      }
-
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              
-              if (data.type === 'agent_step') {
-                setAgentSteps(prev => [...prev, {
-                  ...data,
-                  timestamp: new Date()
-                }])
-              } else if (data.type === 'result') {
-                setOptimizationResult({
-                  status: 'success',
-                  data: data.data
-                })
-                setIsOptimizing(false)
-              } else if (data.type === 'error') {
-                setOptimizationResult({
-                  status: 'error',
-                  error: data.message
-                })
-                setIsOptimizing(false)
-              }
-            } catch (e) {
-              console.error('Error parsing SSE data:', e)
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Optimization error:', error)
-      setOptimizationResult({
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      })
-      setIsOptimizing(false)
-    }
+    // Show the optimization panel
+    setShowOptimization(true)
+    setOptimizationBudget(budgetToUse)
   }
 
   // Initialize page
@@ -613,21 +536,30 @@ export default function RegionPage() {
           <Map 
             blocks={blocks} 
             visualizationMode={visualizationMode} 
-            foodBanks={optimizationResult?.data?.locations}
-            warehouses={optimizationResult?.data?.warehouses}
+            foodBanks={optimizationResult?.locations}
+            warehouses={optimizationResult?.warehouses}
           />
 
           {/* Optimization Panel */}
           {showOptimization && (
             <OptimizationFloatingPanel
-              result={optimizationResult}
-              isOptimizing={isOptimizing}
-              budget={parseFloat(optimizationBudget || lastValidBudget)}
-              agentSteps={agentSteps}
+              domain={region.collection_name.startsWith('d_') 
+                ? region.collection_name.substring(2) 
+                : region.collection_name}
+              budget={parseFloat(optimizationBudget || lastValidBudget || '1000000')}
+              isVisible={showOptimization}
               onClose={() => {
                 setShowOptimization(false)
                 setOptimizationResult(null)
                 setAgentSteps([])
+              }}
+              onOptimizationComplete={(result) => {
+                setOptimizationResult(result)
+                setIsOptimizing(false)
+                // Update the map with new locations
+                if (result.status === 'success') {
+                  // The map will automatically update with the new locations
+                }
               }}
             />
           )}
