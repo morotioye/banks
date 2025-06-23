@@ -7,7 +7,7 @@ export default function LandingPage() {
   const router = useRouter()
 
   return (
-    <div className="min-h-screen bg-stone-50 font-funnel">
+    <div className="min-h-screen bg-stone-50">
       <Head>
         <title>banks - Optimizing Food Security Through Data</title>
         <meta name="description" content="Using AI and geospatial analysis to optimize food bank locations and reduce food insecurity" />
@@ -17,14 +17,8 @@ export default function LandingPage() {
       </Head>
 
       {/* Global gradient background */}
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'linear-gradient(180deg, hsl(25, 5%, 97%) 0%, hsl(25, 5%, 95%) 25%, hsl(140, 15%, 96%) 50%, hsl(140, 20%, 94%) 75%, hsl(140, 25%, 92%) 100%)',
-        zIndex: -2
+      <div className="fixed inset-0 -z-10" style={{
+        background: 'linear-gradient(180deg, hsl(25, 5%, 97%) 0%, hsl(25, 5%, 95%) 25%, hsl(140, 15%, 96%) 50%, hsl(140, 20%, 94%) 75%, hsl(140, 25%, 92%) 100%)'
       }} />
 
       {/* Navigation */}

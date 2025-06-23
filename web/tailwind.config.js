@@ -10,13 +10,13 @@ module.exports = {
   	extend: {
   		fontFamily: {
   			sans: [
-  				'Funnel Display"',
+  				'Funnel Display',
   				'system-ui',
   				'-apple-system',
   				'sans-serif'
   			],
   			funnel: [
-  				'Funnel Display"',
+  				'Funnel Display',
   				'system-ui',
   				'-apple-system',
   				'sans-serif'
